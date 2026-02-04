@@ -1,0 +1,48 @@
+{
+  "name": "linear-release",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CLI tool to integrate CI/CD pipelines with Linear releases",
+  "homepage": "https://github.com/linear/linear-release",
+  "license": "MIT",
+  "author": "Linear Orbit, Inc",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/linear/linear-release.git"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "build:executable": "VERSION=$(node -p \"require('./package.json').version\") && NODE_ENV=production bun build --compile --define \"CLI_VERSION='$VERSION'\" src/index.ts --outfile=./bin/linear-release",
+    "build:executable:dev": "NODE_ENV=development bun build --compile --define \"CLI_VERSION='dev'\" src/index.ts --outfile=./bin/linear-release",
+    "clean": "rm -rf dist bin",
+    "start": "node --env-file=.env.local dist/index.js",
+    "dev": "node --env-file=.env.local --import=tsx src/index.ts",
+    "test": "vitest",
+    "test:ci": "vitest --run",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "fmt": "oxfmt --write",
+    "fmt:check": "oxfmt --check",
+    "prepare": "[ \"$CI\" = \"true\" ] || (git config --unset core.hooksPath 2>/dev/null || true; lefthook install)"
+  },
+  "dependencies": {
+    "@linear/sdk": "^64.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "lefthook": "^2.0.16",
+    "oxfmt": "^0.27.0",
+    "oxlint": "^1.42.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "bun": ">=1.0.0",
+    "node": ">=22.20"
+  },
+  "packageManager": "pnpm@10.22.0"
+}

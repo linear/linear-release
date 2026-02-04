@@ -1,0 +1,20 @@
+output:
+  - summary
+  - success
+  - failure
+
+pre-commit:
+  parallel: true
+  commands:
+    format:
+      glob: "*.ts"
+      run: pnpm exec oxfmt --write {staged_files}
+      stage_fixed: true
+
+    lint:
+      glob: "*.ts"
+      run: pnpm exec oxlint --fix {staged_files}
+      stage_fixed: true
+
+    build:
+      run: pnpm build

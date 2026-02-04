@@ -1,0 +1,65 @@
+name: Run Release Management
+
+on:
+  workflow_call:
+    inputs:
+      action:
+        description: "Action to perform"
+        required: true
+        type: string
+
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action"
+        required: true
+        type: choice
+        options:
+          - sync
+          - complete
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Sync issues to release
+    if: inputs.action == 'sync'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download --repo linear/linear-release --pattern "linear-release-linux-x64" --output linear-release
+
+      - name: Sync issues
+        env:
+          LINEAR_ACCESS_KEY: ${{ secrets.LINEAR_RELEASE_MANAGEMENT_ACCESS_KEY }}
+        run: |
+          chmod +x linear-release
+          ./linear-release sync
+
+  complete:
+    name: Complete release
+    if: inputs.action == 'complete'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download --repo linear/linear-release --pattern "linear-release-linux-x64" --output linear-release
+
+      - name: Complete release
+        env:
+          LINEAR_ACCESS_KEY: ${{ secrets.LINEAR_RELEASE_MANAGEMENT_ACCESS_KEY }}
+        run: |
+          chmod +x linear-release
+          ./linear-release complete

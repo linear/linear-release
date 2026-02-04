@@ -1,0 +1,135 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build executable for ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x64
+            platform: linux-x64
+            target: bun-linux-x64
+          - os: macos-latest
+            arch: x64
+            platform: darwin-x64
+            target: bun-darwin-x64
+          - os: macos-latest
+            arch: arm64
+            platform: darwin-arm64
+            target: bun-darwin-arm64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history needed for git operations
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.22"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build executable
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          NODE_ENV=production bun build --compile --target=${{ matrix.target }} \
+            --define "CLI_VERSION='$VERSION'" \
+            src/index.ts --outfile=./bin/linear-release
+
+      - name: Code sign macOS executable
+        if: matrix.os == 'macos-latest'
+        run: |
+          codesign --force --deep --sign - ./bin/linear-release || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linear-release-${{ matrix.platform }}
+          path: bin/linear-release*
+          retention-days: 7
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: List artifacts
+        run: |
+          find ./artifacts -type f
+          ls -la ./artifacts/
+
+      - name: Extract tag name
+        id: tag
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "Tag name: $TAG_NAME"
+
+      - name: Prepare release files
+        run: |
+          mkdir -p ./release-files
+          # Copy each platform's executable with platform-specific name
+          for dir in ./artifacts/linear-release-*/; do
+            platform=$(basename "$dir" | sed 's/linear-release-//')
+            if [ -f "$dir/linear-release" ]; then
+              cp "$dir/linear-release" "./release-files/linear-release-${platform}"
+            elif [ -f "$dir/linear-release.exe" ]; then
+              cp "$dir/linear-release.exe" "./release-files/linear-release-${platform}.exe"
+            fi
+          done
+          ls -la ./release-files/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag_name }}
+          name: Release ${{ steps.tag.outputs.tag_name }}
+          files: |
+            ./release-files/*
+          generate_release_notes: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: false
+          prerelease: false
+
+  complete-release:
+    name: Complete release
+    needs: release
+    uses: ./.github/workflows/run-linear-release.yml
+    with:
+      action: complete
+    secrets: inherit
