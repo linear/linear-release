@@ -73,6 +73,20 @@ export type GitInfo = {
 export type RepoInfo = {
   owner: string | null;
   name: string | null;
+  integrationService: "github" | "gitlab" | null;
+};
+
+export type ReleaseRepository = {
+  owner: string;
+  name: string;
+  integrationService: "github" | "gitlab";
+};
+
+export type ReleaseCommit = {
+  sha: string;
+  message?: string | null;
+  prNumber?: number | null;
+  prTitle?: string | null;
 };
 
 // Debug sink types

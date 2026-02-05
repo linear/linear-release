@@ -13,6 +13,8 @@ import {
   IssueSource,
   PullRequestSource,
   RepoInfo,
+  ReleaseRepository,
+  ReleaseCommit,
 } from "./types";
 import { log } from "./log";
 import { pluralize } from "./util";
@@ -294,7 +296,7 @@ async function syncCommand() {
 
   const repoInfo = getRepoInfo();
 
-  const release = await syncRelease(issueIdentifiers, prNumbers, repoInfo, debugSink);
+  const release = await syncRelease(issueIdentifiers, prNumbers, repoInfo, debugSink, commits);
   log(
     `Issues [${issueIdentifiers.join(", ")}] and pull requests [${prNumbers.join(
       ", ",
@@ -403,11 +405,53 @@ async function getPipelineSettings(): Promise<{ includePathPatterns: string[] }>
   };
 }
 
+/** Builds the repository input from repo info, if available. */
+function buildReleaseRepository(repoInfo: RepoInfo | null): ReleaseRepository | undefined {
+  if (!repoInfo?.owner || !repoInfo?.name || !repoInfo?.integrationService) {
+    return undefined;
+  }
+  return {
+    owner: repoInfo.owner,
+    name: repoInfo.name,
+    integrationService: repoInfo.integrationService,
+  };
+}
+
+/** Builds the release commits array from commit contexts, with PR numbers attached. */
+function buildReleaseCommits(commits: CommitContext[], prNumbers: number[]): ReleaseCommit[] {
+  const prNumbersSet = new Set(prNumbers);
+
+  return commits.map((ctx) => {
+    const firstLine = ctx.message?.split("\n")[0] ?? null;
+
+    // Extract PR number from this commit's message
+    let prNumber: number | null = null;
+    if (firstLine) {
+      const squashMatch = firstLine.match(/\(#(\d+)\)$/);
+      const mergeMatch = firstLine.match(/^Merge pull request #(\d+)/i);
+      const match = squashMatch ?? mergeMatch;
+      if (match) {
+        const num = Number.parseInt(match[1]!, 10);
+        if (prNumbersSet.has(num)) {
+          prNumber = num;
+        }
+      }
+    }
+
+    return {
+      sha: ctx.sha,
+      message: firstLine,
+      prNumber,
+    };
+  });
+}
+
 async function syncRelease(
   issueIdentifiers: string[],
   prNumbers: number[],
   repoInfo: RepoInfo | null,
   debugSink: DebugSink,
+  commits: CommitContext[],
 ): Promise<Release> {
   const currentSha = await getCurrentGitInfo().commit;
   if (!currentSha) {
@@ -419,6 +463,8 @@ async function syncRelease(
   }
 
   const { owner, name } = repoInfo ?? {};
+  const repository = buildReleaseRepository(repoInfo);
+  const releaseCommits = buildReleaseCommits(commits, prNumbers);
 
   const response = (await linearClient.client.rawRequest(
     `
@@ -447,6 +493,8 @@ async function syncRelease(
           number,
         })),
         debugSink,
+        repository,
+        commits: releaseCommits,
       },
     },
   )) as AccessKeySyncReleaseResponse;

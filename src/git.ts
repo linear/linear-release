@@ -303,6 +303,17 @@ export function getCommitContextsBetweenShas(
   return commits;
 }
 
+/** Detects the integration service from a git remote URL. */
+function detectIntegrationService(url: string): "github" | "gitlab" | null {
+  if (url.includes("github.com")) {
+    return "github";
+  }
+  if (url.includes("gitlab.com") || url.includes("gitlab.")) {
+    return "gitlab";
+  }
+  return null;
+}
+
 export function getRepoInfo(remote: string = "origin", cwd: string = process.cwd()): RepoInfo | null {
   try {
     const url = execSync(`git remote get-url ${remote}`, {
@@ -310,6 +321,8 @@ export function getRepoInfo(remote: string = "origin", cwd: string = process.cwd
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
     }).trim();
+
+    const integrationService = detectIntegrationService(url);
 
     // Handle HTTPS URLs: https://github.com/owner/repo.git or https://github.com/owner/repo
     const httpsMatch = url.match(
@@ -319,6 +332,7 @@ export function getRepoInfo(remote: string = "origin", cwd: string = process.cwd
       return {
         owner: httpsMatch[1] || null,
         name: httpsMatch[2]?.replace(/\.git$/, "") || null,
+        integrationService,
       };
     }
 
@@ -328,6 +342,7 @@ export function getRepoInfo(remote: string = "origin", cwd: string = process.cwd
       return {
         owner: sshMatch[1] || null,
         name: sshMatch[2]?.replace(/\.git$/, "") || null,
+        integrationService,
       };
     }
 
