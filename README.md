@@ -14,17 +14,12 @@
   Automatically link issues to releases.
 </p>
 <p align="center">
-  <a href="https://github.com/linear/linear-release/blob/main/LICENSE">
-    <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="Linear Release is released under the MIT license." />
-  </a>
+  <a href="https://github.com/linear/linear-release/actions/workflows/test.yml"><img src="https://github.com/linear/linear-release/actions/workflows/test.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/linear/linear-release/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="Linear Release is released under the MIT license."></a>
 </p>
-
-<br/>
 
 > [!NOTE]
 > This project is currently in beta and requires enrollment to use. If you're interested in trying it out or need assistance, please contact [Linear support](https://linear.app/contact) or your account manager. APIs and commands may change in future releases.
-
-<br/>
 
 ## Overview
 
