@@ -18,6 +18,46 @@ import { log } from "./log";
 import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
 
+declare const CLI_VERSION: string;
+
+if (process.argv.includes("--version") || process.argv.includes("-v")) {
+  console.log(CLI_VERSION);
+  process.exit(0);
+}
+
+if (process.argv.includes("--help") || process.argv.includes("-h")) {
+  console.log(`Linear Release CLI v${CLI_VERSION}
+
+Integrate CI/CD pipelines with Linear releases.
+
+Usage: linear-release <command> [options]
+
+Commands:
+  sync      Create or update a release by scanning commits (default)
+  complete  Mark the current release as complete
+  update    Update the deployment stage of a release
+
+Options:
+  --name=<name>              Custom release name (sync only)
+  --version=<version>        Release version identifier
+  --stage=<stage>            Deployment stage (required for update)
+  --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
+  -v, --version              Show version number
+  -h, --help                 Show this help message
+
+Environment:
+  LINEAR_ACCESS_KEY          Pipeline access key (required)
+
+Examples:
+  linear-release sync
+  linear-release sync --name="Release 1.2.0" --version="1.2.0"
+  linear-release complete
+  linear-release update --stage=production
+  linear-release sync --include-paths="apps/web/**,packages/**"
+`);
+  process.exit(0);
+}
+
 const accessKey: string = process.env.LINEAR_ACCESS_KEY || "";
 const command: string = process.argv[2] || "sync";
 
