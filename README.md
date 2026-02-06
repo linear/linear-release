@@ -125,13 +125,13 @@ linear-release update --stage="in review" --release-version="1.2.0"
 
 ### CLI Options
 
-| Option            | Commands                     | Description                                                                                                                                              |
-| ----------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--name`          | `sync`                       | Custom release name. Defaults to short commit hash.                                                                                                      |
+| Option              | Commands                     | Description                                                                                                                                              |
+| ------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--name`            | `sync`                       | Custom release name. Defaults to short commit hash.                                                                                                      |
 | `--release-version` | `sync`, `complete`, `update` | Release version identifier. For `sync`, defaults to short commit hash. For `complete` and `update`, if omitted, targets the most recent started release. |
-| `--stage`         | `update`                     | Target deployment stage (required for `update`)                                                                                                          |
-| `--include-paths` | `sync`                       | Filter commits by changed file paths                                                                                                                     |
-| `--json`          | `sync`, `complete`, `update` | Output result as JSON                                                                                                                                    |
+| `--stage`           | `update`                     | Target deployment stage (required for `update`)                                                                                                          |
+| `--include-paths`   | `sync`                       | Filter commits by changed file paths                                                                                                                     |
+| `--json`            | `sync`, `complete`, `update` | Output result as JSON                                                                                                                                    |
 
 ### JSON Output
 
