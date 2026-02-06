@@ -37,7 +37,10 @@ export type AccessKeyCompleteReleaseResponse = {
     releaseCompleteByAccessKey: {
       success: boolean;
       release: {
+        id: string;
         name: string;
+        version?: string;
+        url?: string;
       } | null;
     };
   };
@@ -48,7 +51,10 @@ export type AccessKeyUpdateByPipelineResponse = {
     releaseUpdateByPipelineByAccessKey: {
       success: boolean;
       release: {
+        id: string;
         name: string;
+        version?: string;
+        url?: string;
         stage: {
           name: string;
         } | null;

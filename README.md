@@ -88,7 +88,7 @@ Creates a release or adds issues to the current release. This is the default com
 linear-release sync
 
 # Specify custom name and version
-linear-release sync --name="v1.2.0" --version="1.2.0"
+linear-release sync --name="Release 1.2.0" --version="1.2.0"
 ```
 
 ### `complete`
@@ -131,6 +131,18 @@ linear-release update --stage="in review" --version="1.2.0"
 | `--version`       | `sync`, `complete`, `update` | Release version identifier. For `sync`, defaults to short commit hash. For `complete` and `update`, if omitted, targets the most recent started release. |
 | `--stage`         | `update`                     | Target deployment stage (required for `update`)                                                                                                          |
 | `--include-paths` | `sync`                       | Filter commits by changed file paths                                                                                                                     |
+| `--json`          | `sync`, `complete`, `update` | Output result as JSON                                                                                                                                    |
+
+### JSON Output
+
+Use `--json` to get structured output for scripting.
+
+```bash
+linear-release sync --json
+# => {"release":{"id":"...","name":"Release 1.2.0","version":"1.2.0","url":"https://linear.app/..."}}
+```
+
+When no release is created (e.g. no commits found), `--json` outputs `{"release":null}`.
 
 ### Path Filtering
 

@@ -14,7 +14,7 @@ import {
   PullRequestSource,
   RepoInfo,
 } from "./types";
-import { log } from "./log";
+import { log, setStderr } from "./log";
 import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
 
@@ -42,6 +42,7 @@ Options:
   --version=<version>        Release version identifier
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
+  --json                     Output result as JSON
   -v, --version              Show version number
   -h, --help                 Show this help message
 
@@ -87,6 +88,12 @@ const releaseVersion: string | null = versionArg ? versionArg.replace("--version
 // Parse --stage=<stage-name> CLI argument for update command
 const stageArg = process.argv.find((arg) => arg.startsWith("--stage="));
 const stageName: string | null = stageArg ? stageArg.replace("--stage=", "").trim() : null;
+
+// Parse --json flag for structured JSON output
+const jsonOutput = process.argv.includes("--json");
+if (jsonOutput) {
+  setStderr(true);
+}
 
 const logEnvironmentSummary = () => {
   log("Using access key authentication");
@@ -212,7 +219,9 @@ function scanCommits(
   };
 }
 
-async function syncCommand() {
+async function syncCommand(): Promise<{
+  release: { id: string; name: string; version?: string; url?: string };
+} | null> {
   logEnvironmentSummary();
 
   // Fetch pipeline settings from API
@@ -279,7 +288,7 @@ async function syncCommand() {
       ? `matching ${JSON.stringify(effectiveIncludePaths)}`
       : "in the computed range";
     log(`No commits found ${reason}. Skipping release creation.`);
-    return;
+    return null;
   }
 
   const { issueIdentifiers, prNumbers, debugSink } = scanCommits(commits, effectiveIncludePaths);
@@ -302,9 +311,13 @@ async function syncCommand() {
   );
 
   log("Finished");
+
+  return { release: { id: release.id, name: release.name, version: release.version, url: release.url } };
 }
 
-async function completeCommand() {
+async function completeCommand(): Promise<{
+  release: { id: string; name: string; version?: string; url?: string };
+} | null> {
   logEnvironmentSummary();
 
   const currentCommit = await getCurrentGitInfo();
@@ -321,9 +334,22 @@ async function completeCommand() {
   }
 
   log("Finished");
+
+  return result.release
+    ? {
+        release: {
+          id: result.release.id,
+          name: result.release.name,
+          version: result.release.version,
+          url: result.release.url,
+        },
+      }
+    : null;
 }
 
-async function updateCommand() {
+async function updateCommand(): Promise<{
+  release: { id: string; name: string; version?: string; url?: string };
+} | null> {
   logEnvironmentSummary();
 
   if (!stageName) {
@@ -348,6 +374,17 @@ async function updateCommand() {
   }
 
   log("Finished");
+
+  return result.release
+    ? {
+        release: {
+          id: result.release.id,
+          name: result.release.name,
+          version: result.release.version,
+          url: result.release.url,
+        },
+      }
+    : null;
 }
 
 async function getLatestRelease(): Promise<Release | null> {
@@ -428,6 +465,7 @@ async function syncRelease(
         release {
           id
           name
+          url
           version
           commitSha
           createdAt
@@ -461,7 +499,7 @@ async function syncRelease(
 async function completeRelease(options: {
   version?: string | null;
   commitSha?: string | null;
-}): Promise<{ success: boolean; release: { name: string } | null }> {
+}): Promise<{ success: boolean; release: { id: string; name: string; version?: string; url?: string } | null }> {
   const { version, commitSha } = options;
 
   const response = (await linearClient.client.rawRequest(
@@ -470,7 +508,10 @@ async function completeRelease(options: {
       releaseCompleteByAccessKey(input: $input) {
         success
         release {
+          id
           name
+          version
+          url
         }
       }
     }
@@ -488,7 +529,7 @@ async function completeRelease(options: {
 
 async function updateReleaseByPipeline(options: { stage?: string; version?: string | null }): Promise<{
   success: boolean;
-  release: { name: string; stageName: string } | null;
+  release: { id: string; name: string; version?: string; url?: string; stageName: string } | null;
 }> {
   const { stage, version } = options;
   const versionInput = version ? `, version: "${version}"` : "";
@@ -504,7 +545,10 @@ async function updateReleaseByPipeline(options: { stage?: string; version?: stri
       releaseUpdateByPipelineByAccessKey(input: { ${inputParts} }) {
         success
         release {
+          id
           name
+          version
+          url
           stage {
             name
           }
@@ -519,7 +563,10 @@ async function updateReleaseByPipeline(options: { stage?: string; version?: stri
     success: result.success,
     release: result.release
       ? {
+          id: result.release.id,
           name: result.release.name,
+          version: result.release.version,
+          url: result.release.url,
           stageName: result.release.stage?.name ?? "(unknown)",
         }
       : null,
@@ -527,20 +574,26 @@ async function updateReleaseByPipeline(options: { stage?: string; version?: stri
 }
 
 async function main() {
+  let result: { release: { id: string; name: string; version?: string; url?: string } } | null = null;
+
   switch (command) {
     case "sync":
-      await syncCommand();
+      result = await syncCommand();
       break;
     case "complete":
-      await completeCommand();
+      result = await completeCommand();
       break;
     case "update":
-      await updateCommand();
+      result = await updateCommand();
       break;
     default:
       console.error(`Unknown command: ${command}`);
       console.error("Available commands: sync, complete, update");
       process.exit(1);
+  }
+
+  if (jsonOutput) {
+    console.log(JSON.stringify(result ?? { release: null }));
   }
 }
 
