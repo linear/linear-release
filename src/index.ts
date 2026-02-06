@@ -14,6 +14,7 @@ import {
   PullRequestSource,
   RepoInfo,
 } from "./types";
+import { parseCLIArgs } from "./args";
 import { log, setStderr } from "./log";
 import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
@@ -39,7 +40,7 @@ Commands:
 
 Options:
   --name=<name>              Custom release name (sync only)
-  --version=<version>        Release version identifier
+  --release-version=<version>  Release version identifier
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
   --json                     Output result as JSON
@@ -51,7 +52,7 @@ Environment:
 
 Examples:
   linear-release sync
-  linear-release sync --name="Release 1.2.0" --version="1.2.0"
+  linear-release sync --name="Release 1.2.0" --release-version="1.2.0"
   linear-release complete
   linear-release update --stage=production
   linear-release sync --include-paths="apps/web/**,packages/**"
@@ -60,37 +61,21 @@ Examples:
 }
 
 const accessKey: string = process.env.LINEAR_ACCESS_KEY || "";
-const command: string = process.argv[2] || "sync";
 
 if (!accessKey) {
   console.error("Error: LINEAR_ACCESS_KEY environment variable must be set");
   process.exit(1);
 }
 
-// Parse --include-paths=path1,path2 CLI argument for filtering commits by changed files
-const includePathsArg = process.argv.find((arg) => arg.startsWith("--include-paths="));
-const includePaths: string[] | null = includePathsArg
-  ? includePathsArg
-      .replace("--include-paths=", "")
-      .split(",")
-      .map((p) => p.trim())
-      .filter((p) => p.length > 0)
-  : null;
-
-// Parse --name=<name> CLI argument for custom release name
-const nameArg = process.argv.find((arg) => arg.startsWith("--name="));
-const releaseName: string | null = nameArg ? nameArg.replace("--name=", "").trim() : null;
-
-// Parse --version=<version> CLI argument for custom release version
-const versionArg = process.argv.find((arg) => arg.startsWith("--version="));
-const releaseVersion: string | null = versionArg ? versionArg.replace("--version=", "").trim() : null;
-
-// Parse --stage=<stage-name> CLI argument for update command
-const stageArg = process.argv.find((arg) => arg.startsWith("--stage="));
-const stageName: string | null = stageArg ? stageArg.replace("--stage=", "").trim() : null;
-
-// Parse --json flag for structured JSON output
-const jsonOutput = process.argv.includes("--json");
+let parsedArgs: ReturnType<typeof parseCLIArgs>;
+try {
+  parsedArgs = parseCLIArgs(process.argv.slice(2));
+} catch (error) {
+  console.error(`Error: ${error instanceof Error ? error.message : error}`);
+  console.error("Run linear-release --help for usage information.");
+  process.exit(1);
+}
+const { command, releaseName, releaseVersion, stageName, includePaths, jsonOutput } = parsedArgs;
 if (jsonOutput) {
   setStderr(true);
 }
