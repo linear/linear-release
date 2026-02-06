@@ -51,30 +51,30 @@ chmod +x linear-release
 
 ### GitHub Actions
 
+Use the official [Linear Release Action](https://github.com/marketplace/actions/linear-release) for the simplest setup:
+
 ```yaml
-name: Release
+steps:
+  - uses: actions/checkout@v4
+    with:
+      fetch-depth: 0
 
-on:
-  push:
-    branches: [main]
+  - uses: linear/linear-release-action@v0
+    with:
+      access_key: ${{ secrets.LINEAR_ACCESS_KEY }}
+```
 
-jobs:
-  release:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Required for commit history
+### Other CI platforms
 
-      - name: Download Linear Release CLI
-        run: |
-          curl -L https://github.com/linear/linear-release/releases/latest/download/linear-release-linux-x64 -o linear-release
-          chmod +x linear-release
+Download the CLI binary and run it directly:
 
-      - name: Sync release
-        env:
-          LINEAR_ACCESS_KEY: ${{ secrets.LINEAR_ACCESS_KEY }}
-        run: ./linear-release sync
+```yaml
+# Download
+curl -L https://github.com/linear/linear-release/releases/latest/download/linear-release-linux-x64 -o linear-release
+chmod +x linear-release
+
+# Run
+LINEAR_ACCESS_KEY=<your-key> ./linear-release sync
 ```
 
 ## Commands
