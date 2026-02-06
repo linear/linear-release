@@ -88,7 +88,7 @@ Creates a release or adds issues to the current release. This is the default com
 linear-release sync
 
 # Specify custom name and version
-linear-release sync --name="Release 1.2.0" --version="1.2.0"
+linear-release sync --name="Release 1.2.0" --release-version="1.2.0"
 ```
 
 ### `complete`
@@ -100,7 +100,7 @@ Marks a release as complete. Only applicable to scheduled pipelines, as continuo
 linear-release complete
 
 # Completes the release with the specified version
-linear-release complete --version="1.2.0"
+linear-release complete --release-version="1.2.0"
 ```
 
 ### `update`
@@ -112,7 +112,7 @@ Updates a release's deployment stage. Only applicable to scheduled pipelines, as
 linear-release update --stage="in review"
 
 # Updates the release with the specified version
-linear-release update --stage="in review" --version="1.2.0"
+linear-release update --stage="in review" --release-version="1.2.0"
 ```
 
 ## Configuration
@@ -125,13 +125,13 @@ linear-release update --stage="in review" --version="1.2.0"
 
 ### CLI Options
 
-| Option            | Commands                     | Description                                                                                                                                              |
-| ----------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--name`          | `sync`                       | Custom release name. Defaults to short commit hash.                                                                                                      |
-| `--version`       | `sync`, `complete`, `update` | Release version identifier. For `sync`, defaults to short commit hash. For `complete` and `update`, if omitted, targets the most recent started release. |
-| `--stage`         | `update`                     | Target deployment stage (required for `update`)                                                                                                          |
-| `--include-paths` | `sync`                       | Filter commits by changed file paths                                                                                                                     |
-| `--json`          | `sync`, `complete`, `update` | Output result as JSON                                                                                                                                    |
+| Option              | Commands                     | Description                                                                                                                                              |
+| ------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--name`            | `sync`                       | Custom release name. Defaults to short commit hash.                                                                                                      |
+| `--release-version` | `sync`, `complete`, `update` | Release version identifier. For `sync`, defaults to short commit hash. For `complete` and `update`, if omitted, targets the most recent started release. |
+| `--stage`           | `update`                     | Target deployment stage (required for `update`)                                                                                                          |
+| `--include-paths`   | `sync`                       | Filter commits by changed file paths                                                                                                                     |
+| `--json`            | `sync`, `complete`, `update` | Output result as JSON                                                                                                                                    |
 
 ### JSON Output
 
