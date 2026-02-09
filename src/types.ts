@@ -83,6 +83,12 @@ export type RepoInfo = {
   url: string | null;
 };
 
+export type FoundIssueIdentifier = {
+  identifier: string;
+  commitSha: string;
+  source: "commit_message" | "branch_name";
+};
+
 // Debug sink types
 export type IssueSource = {
   sha: string;
