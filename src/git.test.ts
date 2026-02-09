@@ -12,6 +12,7 @@ import {
   getRepoInfo,
   isMergeCommit,
   normalizePathspec,
+  parseRepoUrl,
 } from "./git";
 
 describe("normalizePathspec", () => {
@@ -124,12 +125,146 @@ describe("extractBranchName", () => {
 });
 
 describe("getRepoInfo", () => {
-  // Skip: reads from actual git remote, will pass once in linear-release repo
-  it.skip("should return the repo info", () => {
+  it("should return the repo info", () => {
     const result = getRepoInfo();
     expect(result).toBeDefined();
     expect(result?.owner).toBe("linear");
     expect(result?.name).toBe("linear-release");
+    expect(result?.provider).toBe("github");
+    expect(result?.url).toBe("https://github.com/linear/linear-release");
+  });
+});
+
+describe("parseRepoUrl", () => {
+  describe("HTTPS URLs", () => {
+    it("should parse github.com HTTPS URL", () => {
+      const result = parseRepoUrl("https://github.com/linear/linear-app.git");
+      expect(result).toEqual({
+        owner: "linear",
+        name: "linear-app",
+        provider: "github",
+        url: "https://github.com/linear/linear-app",
+      });
+    });
+
+    it("should parse github.com HTTPS URL without .git suffix", () => {
+      const result = parseRepoUrl("https://github.com/linear/linear-app");
+      expect(result).toEqual({
+        owner: "linear",
+        name: "linear-app",
+        provider: "github",
+        url: "https://github.com/linear/linear-app",
+      });
+    });
+
+    it("should parse gitlab.com HTTPS URL", () => {
+      const result = parseRepoUrl("https://gitlab.com/myorg/myrepo.git");
+      expect(result).toEqual({
+        owner: "myorg",
+        name: "myrepo",
+        provider: "gitlab",
+        url: "https://gitlab.com/myorg/myrepo",
+      });
+    });
+
+    it("should parse GitHub Enterprise HTTPS URL", () => {
+      const result = parseRepoUrl("https://github.mycompany.com/engineering/platform.git");
+      expect(result).toEqual({
+        owner: "engineering",
+        name: "platform",
+        provider: "github",
+        url: "https://github.mycompany.com/engineering/platform",
+      });
+    });
+
+    it("should parse self-hosted GitLab HTTPS URL", () => {
+      const result = parseRepoUrl("https://gitlab.internal.io/team/service.git");
+      expect(result).toEqual({
+        owner: "team",
+        name: "service",
+        provider: "gitlab",
+        url: "https://gitlab.internal.io/team/service",
+      });
+    });
+
+    it("should parse HTTPS URL with credentials", () => {
+      const result = parseRepoUrl("https://token@github.com/linear/linear-app.git");
+      expect(result).toEqual({
+        owner: "linear",
+        name: "linear-app",
+        provider: "github",
+        url: "https://github.com/linear/linear-app",
+      });
+    });
+  });
+
+  describe("SSH URLs", () => {
+    it("should parse github.com SSH URL", () => {
+      const result = parseRepoUrl("git@github.com:linear/linear-app.git");
+      expect(result).toEqual({
+        owner: "linear",
+        name: "linear-app",
+        provider: "github",
+        url: "https://github.com/linear/linear-app",
+      });
+    });
+
+    it("should parse github.com SSH URL without .git suffix", () => {
+      const result = parseRepoUrl("git@github.com:linear/linear-app");
+      expect(result).toEqual({
+        owner: "linear",
+        name: "linear-app",
+        provider: "github",
+        url: "https://github.com/linear/linear-app",
+      });
+    });
+
+    it("should parse gitlab.com SSH URL", () => {
+      const result = parseRepoUrl("git@gitlab.com:myorg/myrepo.git");
+      expect(result).toEqual({
+        owner: "myorg",
+        name: "myrepo",
+        provider: "gitlab",
+        url: "https://gitlab.com/myorg/myrepo",
+      });
+    });
+
+    it("should parse GitHub Enterprise SSH URL", () => {
+      const result = parseRepoUrl("git@github.mycompany.com:engineering/platform.git");
+      expect(result).toEqual({
+        owner: "engineering",
+        name: "platform",
+        provider: "github",
+        url: "https://github.mycompany.com/engineering/platform",
+      });
+    });
+
+    it("should parse self-hosted GitLab SSH URL", () => {
+      const result = parseRepoUrl("git@gitlab.internal.io:team/service.git");
+      expect(result).toEqual({
+        owner: "team",
+        name: "service",
+        provider: "gitlab",
+        url: "https://gitlab.internal.io/team/service",
+      });
+    });
+  });
+
+  describe("unknown providers", () => {
+    it("should return null provider for unknown hosts", () => {
+      const result = parseRepoUrl("https://example.com/myorg/myrepo.git");
+      expect(result).toEqual({
+        owner: "myorg",
+        name: "myrepo",
+        provider: null,
+        url: "https://example.com/myorg/myrepo",
+      });
+    });
+
+    it("should return null for unrecognized URL formats", () => {
+      expect(parseRepoUrl("not-a-url")).toBeNull();
+      expect(parseRepoUrl("")).toBeNull();
+    });
   });
 });
 

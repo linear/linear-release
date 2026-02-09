@@ -303,6 +303,54 @@ export function getCommitContextsBetweenShas(
   return commits;
 }
 
+function hostToProvider(host: string): string | null {
+  if (host === "gitlab.com" || host.includes("gitlab")) {
+    return "gitlab";
+  }
+  if (host === "github.com" || host.includes("github")) {
+    return "github";
+  }
+  return null;
+}
+
+/**
+ * Parses a git remote URL (HTTPS or SSH) into repo information.
+ *
+ * @param remoteUrl The raw git remote URL string.
+ * @returns Parsed repo info, or null if the URL could not be parsed.
+ */
+export function parseRepoUrl(remoteUrl: string): RepoInfo | null {
+  // Handle HTTPS URLs: https://github.com/owner/repo.git
+  const httpsMatch = remoteUrl.match(/^https?:\/\/(?:[^@]+@)?([^/]+)\/([^/]+)\/([^/]+?)(?:\.git)?$/);
+  if (httpsMatch) {
+    const host = httpsMatch[1];
+    const owner = httpsMatch[2] || null;
+    const name = httpsMatch[3]?.replace(/\.git$/, "") || null;
+    return {
+      owner,
+      name,
+      provider: hostToProvider(host),
+      url: owner && name ? `https://${host}/${owner}/${name}` : null,
+    };
+  }
+
+  // Handle SSH URLs: git@github.com:owner/repo.git
+  const sshMatch = remoteUrl.match(/^git@([^:]+):([^/]+)\/([^/]+?)(?:\.git)?$/);
+  if (sshMatch) {
+    const host = sshMatch[1];
+    const owner = sshMatch[2] || null;
+    const name = sshMatch[3]?.replace(/\.git$/, "") || null;
+    return {
+      owner,
+      name,
+      provider: hostToProvider(host),
+      url: owner && name ? `https://${host}/${owner}/${name}` : null,
+    };
+  }
+
+  return null;
+}
+
 export function getRepoInfo(remote: string = "origin", cwd: string = process.cwd()): RepoInfo | null {
   try {
     const url = execSync(`git remote get-url ${remote}`, {
@@ -311,27 +359,7 @@ export function getRepoInfo(remote: string = "origin", cwd: string = process.cwd
       encoding: "utf8",
     }).trim();
 
-    // Handle HTTPS URLs: https://github.com/owner/repo.git or https://github.com/owner/repo
-    const httpsMatch = url.match(
-      /^https?:\/\/(?:[^@]+@)?(?:github\.com|gitlab\.com|bitbucket\.org)[/:]([^/]+)\/([^/]+?)(?:\.git)?$/,
-    );
-    if (httpsMatch) {
-      return {
-        owner: httpsMatch[1] || null,
-        name: httpsMatch[2]?.replace(/\.git$/, "") || null,
-      };
-    }
-
-    // Handle SSH URLs: git@github.com:owner/repo.git or git@github.com:owner/repo
-    const sshMatch = url.match(/^git@(?:github\.com|gitlab\.com|bitbucket\.org):([^/]+)\/([^/]+?)(?:\.git)?$/);
-    if (sshMatch) {
-      return {
-        owner: sshMatch[1] || null,
-        name: sshMatch[2]?.replace(/\.git$/, "") || null,
-      };
-    }
-
-    return null;
+    return parseRepoUrl(url);
   } catch (error) {
     console.error(`Error getting repo info: ${error}`);
     return null;

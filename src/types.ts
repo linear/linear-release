@@ -79,6 +79,13 @@ export type GitInfo = {
 export type RepoInfo = {
   owner: string | null;
   name: string | null;
+  provider: string | null;
+  url: string | null;
+};
+
+export type IssueReference = {
+  identifier: string;
+  commitSha: string;
 };
 
 // Debug sink types
