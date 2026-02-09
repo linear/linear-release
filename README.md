@@ -171,4 +171,3 @@ Path patterns can also be configured in your pipeline settings in Linear. If bot
 ## License
 
 Licensed under the [MIT License](./LICENSE).
-pasd
