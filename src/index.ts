@@ -10,6 +10,7 @@ import {
   AccessKeyUpdateByPipelineResponse,
   CommitContext,
   DebugSink,
+  IssueReference,
   IssueSource,
   PullRequestSource,
   RepoInfo,
@@ -113,11 +114,11 @@ function scanCommits(
   commits: CommitContext[],
   includePaths: string[] | null,
 ): {
-  issueIdentifiers: string[];
+  issueReferences: IssueReference[];
   prNumbers: number[];
   debugSink: DebugSink;
 } {
-  const seen = new Set<string>();
+  const seen = new Map<string, IssueReference>();
   const prNumbersSet = new Set<number>();
   const debugSink: DebugSink = {
     inspectedShas: [],
@@ -151,7 +152,7 @@ function scanCommits(
         continue;
       }
 
-      seen.add(key);
+      seen.set(key, { identifier: key, commitSha: commit.sha });
       log(`Detected issue key ${key} from branch name "${commit.branchName ?? ""}"`);
     }
 
@@ -177,7 +178,7 @@ function scanCommits(
         continue;
       }
 
-      seen.add(key);
+      seen.set(key, { identifier: key, commitSha: commit.sha });
       log(`Detected issue key ${key} from commit message "${commit.message ?? ""}"`);
     }
 
@@ -198,7 +199,7 @@ function scanCommits(
   }
 
   return {
-    issueIdentifiers: Array.from(seen),
+    issueReferences: Array.from(seen.values()),
     prNumbers: Array.from(prNumbersSet),
     debugSink,
   };
@@ -276,21 +277,21 @@ async function syncCommand(): Promise<{
     return null;
   }
 
-  const { issueIdentifiers, prNumbers, debugSink } = scanCommits(commits, effectiveIncludePaths);
+  const { issueReferences, prNumbers, debugSink } = scanCommits(commits, effectiveIncludePaths);
 
   log(`Debug sink: ${JSON.stringify(debugSink, null, 2)}`);
 
-  if (issueIdentifiers.length === 0) {
+  if (issueReferences.length === 0) {
     log("No issue keys found");
   } else {
-    log(`Retrieved issue keys: ${issueIdentifiers.join(", ")}`);
+    log(`Retrieved issue keys: ${issueReferences.map((f) => f.identifier).join(", ")}`);
   }
 
   const repoInfo = getRepoInfo();
 
-  const release = await syncRelease(issueIdentifiers, prNumbers, repoInfo, debugSink);
+  const release = await syncRelease(issueReferences, prNumbers, repoInfo, debugSink);
   log(
-    `Issues [${issueIdentifiers.join(", ")}] and pull requests [${prNumbers.join(
+    `Issues [${issueReferences.map((f) => f.identifier).join(", ")}] and pull requests [${prNumbers.join(
       ", ",
     )}] have been added to release ${release.name}`,
   );
@@ -426,7 +427,7 @@ async function getPipelineSettings(): Promise<{ includePathPatterns: string[] }>
 }
 
 async function syncRelease(
-  issueIdentifiers: string[],
+  issueReferences: IssueReference[],
   prNumbers: number[],
   repoInfo: RepoInfo | null,
   debugSink: DebugSink,
@@ -463,7 +464,7 @@ async function syncRelease(
         name: releaseName,
         version: releaseVersion,
         commitSha: currentSha,
-        issueIdentifiers,
+        issueReferences,
         pullRequestReferences: prNumbers.map((number) => ({
           repositoryOwner: owner,
           repositoryName: name,

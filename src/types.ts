@@ -83,6 +83,11 @@ export type RepoInfo = {
   url: string | null;
 };
 
+export type IssueReference = {
+  identifier: string;
+  commitSha: string;
+};
+
 // Debug sink types
 export type IssueSource = {
   sha: string;
