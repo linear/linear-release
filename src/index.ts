@@ -469,6 +469,14 @@ async function syncRelease(
           repositoryName: name,
           number,
         })),
+        repository: repoInfo
+          ? {
+              owner: repoInfo.owner,
+              name: repoInfo.name,
+              provider: repoInfo.provider,
+              url: repoInfo.url,
+            }
+          : undefined,
         debugSink,
       },
     },
