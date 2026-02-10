@@ -7,7 +7,7 @@ pre-commit:
   parallel: true
   commands:
     format:
-      glob: "*.ts"
+      glob: "*.{ts,json,md,yml,yaml}"
       run: pnpm exec oxfmt --write {staged_files}
       stage_fixed: true
 
