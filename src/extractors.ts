@@ -19,6 +19,61 @@ const ISSUE_IDENTIFIER_REGEX = new RegExp(
   "gi",
 );
 
+const LINEAR_ISSUE_URL_REGEX = /https?:\/\/linear\.app\/[\w-]+\/issue\/(\w{1,7}-[0-9]{1,9})(?:\/[\w-]*)*/gi;
+
+function normalizeLinearUrls(text: string): string {
+  return text.replace(LINEAR_ISSUE_URL_REGEX, "$1");
+}
+
+/** Magic words that indicate a commit is closing/fixing an issue. Matches Linear's detection. */
+const CLOSING_WORDS = [
+  "close",
+  "closes",
+  "closed",
+  "closing",
+  "fix",
+  "fixes",
+  "fixed",
+  "fixing",
+  "resolve",
+  "resolves",
+  "resolved",
+  "resolving",
+  "complete",
+  "completes",
+  "completed",
+  "completing",
+];
+
+/** Magic phrases that indicate a commit contributes to an issue. Matches Linear's detection. */
+const CONTRIBUTING_PHRASES = [
+  "ref",
+  "refs",
+  "references",
+  "part of",
+  "related to",
+  "relates to",
+  "contributes to",
+  "towards",
+  "toward",
+];
+
+/**
+ * Core issue ID pattern without word boundaries — used inside the magic word
+ * composite regex where surrounding context already provides boundaries.
+ */
+const ISSUE_ID_CORE = `\\w{1,${MAX_KEY_LENGTH}}-[0-9]{1,9}(?!\\.\\d)`;
+
+/**
+ * Build a regex that matches magic words followed by one or more issue identifiers.
+ * Pattern per line, matching Linear's detection:
+ *   \b(magic_words)[\s:]+(ISSUE_ID(([,\s]|\band\b|&)+ISSUE_ID)*)
+ */
+const MAGIC_WORD_REGEX = new RegExp(
+  `\\b(${[...CLOSING_WORDS, ...CONTRIBUTING_PHRASES].join("|")})[\\s:]+(${ISSUE_ID_CORE}(?:(?:[\\s,]|\\band\\b|&)+${ISSUE_ID_CORE})*)`,
+  "gi",
+);
+
 type IdentifierMatch = {
   identifier: string;
   rawIdentifier: string;
@@ -49,22 +104,52 @@ function matchAllIdentifiers(text: string): IdentifierMatch[] {
   return results;
 }
 
+/**
+ * Extract issue identifiers from text only when preceded by a magic word.
+ * Processes text line-by-line, matching Linear's detection behavior.
+ */
+function matchMagicWordIdentifiers(text: string): IdentifierMatch[] {
+  const results: IdentifierMatch[] = [];
+  const lines = text.split(/\r?\n/);
+
+  for (let line of lines) {
+    line = normalizeLinearUrls(line);
+    const regex = new RegExp(MAGIC_WORD_REGEX.source, "gi");
+    let match;
+    while ((match = regex.exec(line)) !== null) {
+      // match[2] contains the captured issue keys portion (one or more IDs)
+      const issueKeysPortion = match[2];
+      if (issueKeysPortion) {
+        const identifiers = matchAllIdentifiers(issueKeysPortion);
+        results.push(...identifiers);
+      }
+    }
+  }
+
+  return results;
+}
+
 export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): string[] {
   if (!commit) {
     return [];
   }
 
-  const sources = [commit.branchName ?? "", commit.message ?? ""].filter((value) => value.length > 0);
-
-  if (sources.length === 0) {
-    return [];
-  }
-
   const found = new Map<string, string>();
 
-  for (const source of sources) {
-    const matches = matchAllIdentifiers(source);
-    for (const match of matches) {
+  // Branch name: extract all matches (branch names are always intentional)
+  const branchName = commit.branchName ?? "";
+  if (branchName.length > 0) {
+    for (const match of matchAllIdentifiers(branchName)) {
+      if (!found.has(match.identifier)) {
+        found.set(match.identifier, match.rawIdentifier);
+      }
+    }
+  }
+
+  // Commit message: only extract when preceded by a magic word
+  const message = commit.message ?? "";
+  if (message.length > 0) {
+    for (const match of matchMagicWordIdentifiers(message)) {
       if (!found.has(match.identifier)) {
         found.set(match.identifier, match.rawIdentifier);
       }
