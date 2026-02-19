@@ -15,11 +15,11 @@ describe("extractLinearIssueIdentifiersForCommit", () => {
     expect(result).toEqual(["ENG-123"]);
   });
 
-  it("extracts identifiers from commit message", () => {
+  it("extracts identifiers from commit message with magic words", () => {
     const commit: CommitContext = {
       sha: "abc123",
       branchName: "feature/no-key-here",
-      message: "Implements PLAT-42 and ENG-7 in one go",
+      message: "Fixes PLAT-42 and ENG-7 in one go",
     };
 
     const result = extractLinearIssueIdentifiersForCommit(commit);
@@ -31,7 +31,7 @@ describe("extractLinearIssueIdentifiersForCommit", () => {
     const commit: CommitContext = {
       sha: "abc123",
       branchName: "feature/eng-123-awesome-change",
-      message: "ENG-123 fixed, see ENG-123",
+      message: "Fixed ENG-123, see ENG-123",
     };
 
     const result = extractLinearIssueIdentifiersForCommit(commit);
@@ -61,6 +61,18 @@ describe("extractLinearIssueIdentifiersForCommit", () => {
     const result = extractLinearIssueIdentifiersForCommit(commit);
 
     expect(result.sort()).toEqual(["A-1", "ABCDEFG-999", "X1Y2Z3A-100"].sort());
+  });
+
+  it("does not extract identifiers from commit message without magic words", () => {
+    const commit: CommitContext = {
+      sha: "abc123",
+      branchName: "feature/no-key-here",
+      message: "See LIN-123 for details",
+    };
+
+    const result = extractLinearIssueIdentifiersForCommit(commit);
+
+    expect(result).toEqual([]);
   });
 
   it("does not match team keys longer than 7 characters", () => {
@@ -140,8 +152,8 @@ describe("underscore handling ", () => {
 
 describe("multiple identifiers ", () => {
   it.each([
-    ["LIN-123 LIN-321", ["LIN-123", "LIN-321"]],
-    ["Closes issues LIN-123 and LIN-321", ["LIN-123", "LIN-321"]],
+    ["Fixes LIN-123 and LIN-321", ["LIN-123", "LIN-321"]],
+    ["Closes LIN-123, LIN-321", ["LIN-123", "LIN-321"]],
   ])("message %s should yield %j", (message, expected) => {
     const result = extractLinearIssueIdentifiersForCommit({
       sha: "abc",
@@ -149,6 +161,226 @@ describe("multiple identifiers ", () => {
       message,
     });
     expect(result.sort()).toEqual(expected.sort());
+  });
+});
+
+describe("commit message magic word behavior", () => {
+  it("extracts with closing keyword", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "Fixes LIN-123",
+    });
+    expect(result).toEqual(["LIN-123"]);
+  });
+
+  it("extracts with contributing phrase", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "Related to LIN-123",
+    });
+    expect(result).toEqual(["LIN-123"]);
+  });
+
+  it("does not extract without magic words", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "See LIN-123 for details",
+    });
+    expect(result).toEqual([]);
+  });
+
+  it("extracts multiple keys after keyword", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "Fixes LIN-123, LIN-456 and ENG-789",
+    });
+    expect(result.sort()).toEqual(["ENG-789", "LIN-123", "LIN-456"]);
+  });
+
+  it("extracts magic word in title line", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "Fix LIN-123: something",
+    });
+    expect(result).toEqual(["LIN-123"]);
+  });
+
+  it("does not extract key in title without keyword", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "LIN-123: Fix something",
+    });
+    expect(result).toEqual([]);
+  });
+
+  it.each([
+    "close",
+    "closes",
+    "closed",
+    "closing",
+    "fix",
+    "fixes",
+    "fixed",
+    "fixing",
+    "resolve",
+    "resolves",
+    "resolved",
+    "resolving",
+    "complete",
+    "completes",
+    "completed",
+    "completing",
+  ])("closing keyword '%s' extracts issue", (keyword) => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: `${keyword} LIN-100`,
+    });
+    expect(result).toEqual(["LIN-100"]);
+  });
+
+  it.each(["ref", "refs", "references", "part of", "related to", "relates to", "contributes to", "towards", "toward"])(
+    "contributing phrase '%s' extracts issue",
+    (phrase) => {
+      const result = extractLinearIssueIdentifiersForCommit({
+        sha: "abc",
+        branchName: null,
+        message: `${phrase} LIN-200`,
+      });
+      expect(result).toEqual(["LIN-200"]);
+    },
+  );
+
+  it("supports keyword with colon separator", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "Closes: LIN-123",
+    });
+    expect(result).toEqual(["LIN-123"]);
+  });
+
+  it("only extracts keys preceded by magic word on same line", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "See LIN-111, fixes LIN-222",
+    });
+    expect(result).toEqual(["LIN-222"]);
+  });
+
+  it("does not extract from the original bug scenario", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "Title\nSeparate issue to follow up on that here LIN-60064",
+    });
+    expect(result).toEqual([]);
+  });
+
+  it("branch provides keys independently of message magic words", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: "feature/LIN-100-something",
+      message: "See LIN-200 for details",
+    });
+    expect(result).toEqual(["LIN-100"]);
+  });
+
+  it("is case insensitive for magic words", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "fIXES LIN-123",
+    });
+    expect(result).toEqual(["LIN-123"]);
+  });
+
+  it("extracts with multi-word phrase 'Part of'", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "Part of LIN-123",
+    });
+    expect(result).toEqual(["LIN-123"]);
+  });
+
+  it("extracts with multi-word phrase 'Related to'", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "Related to LIN-456",
+    });
+    expect(result).toEqual(["LIN-456"]);
+  });
+
+  it("extracts issue from Linear URL with slug after magic word", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "Fixes https://linear.app/myorg/issue/LIN-123/fix-auth",
+    });
+    expect(result).toEqual(["LIN-123"]);
+  });
+
+  it("extracts issue from Linear URL without slug after magic word", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "Fixes https://linear.app/myorg/issue/LIN-123",
+    });
+    expect(result).toEqual(["LIN-123"]);
+  });
+
+  it("does not extract Linear URL without magic word", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "See https://linear.app/myorg/issue/LIN-123/fix",
+    });
+    expect(result).toEqual([]);
+  });
+
+  it("extracts mixed Linear URLs and raw IDs after magic word", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "Fixes https://linear.app/myorg/issue/LIN-123/slug, ENG-456 and LIN-789",
+    });
+    expect(result.sort()).toEqual(["ENG-456", "LIN-123", "LIN-789"]);
+  });
+
+  it("extracts issue from http Linear URL after magic word", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "Fixes http://linear.app/myorg/issue/LIN-123",
+    });
+    expect(result).toEqual(["LIN-123"]);
+  });
+
+  it("extracts issue from Linear URL with trailing slash", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "Fixes https://linear.app/my-org/issue/LIN-213/",
+    });
+    expect(result).toEqual(["LIN-213"]);
+  });
+
+  it("extracts issue from Linear URL with contributing phrase", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "Part of https://linear.app/myorg/issue/LIN-213/some-slug",
+    });
+    expect(result).toEqual(["LIN-213"]);
   });
 });
 
