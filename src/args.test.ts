@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCLIArgs } from "./args";
+import { getCLIWarnings, parseCLIArgs } from "./args";
 
 describe("parseCLIArgs", () => {
   it("defaults command to sync when no positional given", () => {
@@ -82,5 +82,20 @@ describe("parseCLIArgs", () => {
 
   it("throws on unknown flags (strict mode)", () => {
     expect(() => parseCLIArgs(["--unknown-flag"])).toThrow();
+  });
+
+  it("returns warning when --name is used with update", () => {
+    const result = parseCLIArgs(["update", "--name", "Release 1.2.0"]);
+    expect(getCLIWarnings(result)).toEqual(['--name is ignored for "update" command; it only applies to "sync"']);
+  });
+
+  it("returns warning when --name is used with complete", () => {
+    const result = parseCLIArgs(["complete", "--name", "Release 1.2.0"]);
+    expect(getCLIWarnings(result)).toEqual(['--name is ignored for "complete" command; it only applies to "sync"']);
+  });
+
+  it("returns no warning when --name is used with sync", () => {
+    const result = parseCLIArgs(["sync", "--name", "Release 1.2.0"]);
+    expect(getCLIWarnings(result)).toEqual([]);
   });
 });

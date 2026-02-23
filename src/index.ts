@@ -15,7 +15,7 @@ import {
   PullRequestSource,
   RepoInfo,
 } from "./types";
-import { parseCLIArgs } from "./args";
+import { getCLIWarnings, parseCLIArgs } from "./args";
 import { log, setStderr } from "./log";
 import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
@@ -77,6 +77,7 @@ try {
   process.exit(1);
 }
 const { command, releaseName, releaseVersion, stageName, includePaths, jsonOutput } = parsedArgs;
+const cliWarnings = getCLIWarnings(parsedArgs);
 if (jsonOutput) {
   setStderr(true);
 }
@@ -85,10 +86,15 @@ const logEnvironmentSummary = () => {
   log("Using access key authentication");
 
   if (releaseName) {
-    log(`Using custom release name: ${releaseName}`);
+    if (command === "sync") {
+      log(`Using custom release name: ${releaseName}`);
+    }
   }
   if (releaseVersion) {
     log(`Using custom release version: ${releaseVersion}`);
+  }
+  for (const warning of cliWarnings) {
+    log(`Warning: ${warning}`);
   }
 
   log(`Running in ${process.env.NODE_ENV === "development" ? "development" : "production"} mode`);
