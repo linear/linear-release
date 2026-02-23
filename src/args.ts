@@ -1,6 +1,15 @@
 import { parseArgs } from "node:util";
 
-export function parseCLIArgs(argv: string[]) {
+export type ParsedCLIArgs = {
+  command: string;
+  releaseName?: string;
+  releaseVersion?: string;
+  stageName?: string;
+  includePaths: string[];
+  jsonOutput: boolean;
+};
+
+export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
   const { values, positionals } = parseArgs({
     args: argv,
     options: {
@@ -27,4 +36,14 @@ export function parseCLIArgs(argv: string[]) {
       : [],
     jsonOutput: values.json ?? false,
   };
+}
+
+export function getCLIWarnings(args: ParsedCLIArgs): string[] {
+  const warnings: string[] = [];
+
+  if (args.releaseName && args.command !== "sync") {
+    warnings.push(`--name is ignored for "${args.command}" command; it only applies to "sync"`);
+  }
+
+  return warnings;
 }

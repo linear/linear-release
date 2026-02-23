@@ -125,13 +125,23 @@ linear-release update --stage="in review" --release-version="1.2.0"
 
 ### CLI Options
 
-| Option              | Commands                     | Description                                                                                                                                              |
-| ------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--name`            | `sync`                       | Custom release name. Defaults to short commit hash.                                                                                                      |
-| `--release-version` | `sync`, `complete`, `update` | Release version identifier. For `sync`, defaults to short commit hash. For `complete` and `update`, if omitted, targets the most recent started release. |
-| `--stage`           | `update`                     | Target deployment stage (required for `update`)                                                                                                          |
-| `--include-paths`   | `sync`                       | Filter commits by changed file paths                                                                                                                     |
-| `--json`            | `sync`, `complete`, `update` | Output result as JSON                                                                                                                                    |
+| Option              | Commands                     | Description                                                                                                                                                                                                                          |
+| ------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--name`            | `sync`                       | Custom release name. Continuous pipelines: used when creating a release. Scheduled pipelines: used only when `sync` creates a new release; existing release names are preserved. Ignored (with warning) for `complete` and `update`. |
+| `--release-version` | `sync`, `complete`, `update` | Release version identifier. For `sync`, defaults to short commit hash. For `complete` and `update`, if omitted, targets the most recent started release.                                                                             |
+| `--stage`           | `update`                     | Target deployment stage (required for `update`)                                                                                                                                                                                      |
+| `--include-paths`   | `sync`                       | Filter commits by changed file paths                                                                                                                                                                                                 |
+| `--json`            | `sync`, `complete`, `update` | Output result as JSON                                                                                                                                                                                                                |
+
+### Command Targeting
+
+| Command    | With `--release-version`                                       | Without `--release-version`                                                                                                  |
+| ---------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `sync`     | Targets matching version or creates a release for that version | Continuous pipelines create a release with short SHA name/version. Scheduled pipelines use the current started/planned flow. |
+| `update`   | Updates that exact release version                             | Updates latest started release, or latest planned release if no started release exists                                       |
+| `complete` | Completes that exact release version                           | Completes latest started release                                                                                             |
+
+For scheduled pipelines, prefer always passing `--release-version` in CI, especially when releases overlap.
 
 ### JSON Output
 
@@ -167,6 +177,13 @@ Path patterns can also be configured in your pipeline settings in Linear. If bot
 3. **Extracts issue identifiers** from branch names and commit messages (e.g., `feat/ENG-123-add-feature`)
 4. **Detects pull request numbers** from commit messages (e.g., `Merge pull request #42`)
 5. **Syncs to Linear** creating or updating the release with linked issues
+
+## Troubleshooting
+
+- **Unexpected release was updated/completed**: pass `--release-version` explicitly so the command does not target the latest started/planned release.
+- **No release created by `sync`**: if no commits match the computed range (or path filters), `sync` returns `{"release":null}`.
+- **Stage update fails**: verify stage name exactly. If stage names normalize to the same value, use the exact stage name to avoid ambiguity.
+- **`--name` seems ignored**: `--name` only applies to `sync`; `complete` and `update` ignore it and print a warning.
 
 ## License
 
