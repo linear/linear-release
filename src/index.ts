@@ -19,6 +19,7 @@ import { getCLIWarnings, parseCLIArgs } from "./args";
 import { log, setStderr } from "./log";
 import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
+import { withRetry } from "./retry";
 
 declare const CLI_VERSION: string;
 
@@ -115,6 +116,10 @@ const options: LinearClientOptions = {
 
 const linearClient = new LinearClient(options);
 linearClient.client.setHeader("User-Agent", buildUserAgent());
+
+async function apiRequest<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+  return withRetry(() => linearClient.client.rawRequest(query, variables)) as Promise<T>;
+}
 
 function scanCommits(
   commits: CommitContext[],
@@ -380,7 +385,7 @@ async function updateCommand(): Promise<{
 }
 
 async function getLatestRelease(): Promise<Release | null> {
-  const response = (await linearClient.client.rawRequest(
+  const response = await apiRequest<AccessKeyLatestReleaseResponse>(
     `
     query latestReleaseByAccessKey {
       latestReleaseByAccessKey {
@@ -391,7 +396,7 @@ async function getLatestRelease(): Promise<Release | null> {
       }
     }
   `,
-  )) as AccessKeyLatestReleaseResponse;
+  );
 
   return response.data.latestReleaseByAccessKey;
 }
@@ -417,7 +422,7 @@ async function getLatestSha(): Promise<string> {
 }
 
 async function getPipelineSettings(): Promise<{ includePathPatterns: string[] }> {
-  const response = (await linearClient.client.rawRequest(
+  const response = await apiRequest<AccessKeyPipelineSettingsResponse>(
     `
     query pipelineSettingsByAccessKey {
       releasePipelineByAccessKey {
@@ -425,7 +430,7 @@ async function getPipelineSettings(): Promise<{ includePathPatterns: string[] }>
       }
     }
   `,
-  )) as AccessKeyPipelineSettingsResponse;
+  );
 
   return {
     includePathPatterns: response.data.releasePipelineByAccessKey.includePathPatterns ?? [],
@@ -449,7 +454,7 @@ async function syncRelease(
 
   const { owner, name } = repoInfo ?? {};
 
-  const response = (await linearClient.client.rawRequest(
+  const response = await apiRequest<AccessKeySyncReleaseResponse>(
     `
     mutation syncReleaseByAccessKey($input: ReleaseSyncInputBase!) {
       releaseSyncByAccessKey(input: $input) {
@@ -487,7 +492,7 @@ async function syncRelease(
         debugSink,
       },
     },
-  )) as AccessKeySyncReleaseResponse;
+  );
 
   if (!response.data?.releaseSyncByAccessKey?.release) {
     throw new Error("Failed to sync release");
@@ -502,7 +507,7 @@ async function completeRelease(options: {
 }): Promise<{ success: boolean; release: { id: string; name: string; version?: string; url?: string } | null }> {
   const { version, commitSha } = options;
 
-  const response = (await linearClient.client.rawRequest(
+  const response = await apiRequest<AccessKeyCompleteReleaseResponse>(
     `
     mutation releaseCompleteByAccessKey($input: ReleaseCompleteInputBase!) {
       releaseCompleteByAccessKey(input: $input) {
@@ -522,7 +527,7 @@ async function completeRelease(options: {
         commitSha,
       },
     },
-  )) as AccessKeyCompleteReleaseResponse;
+  );
 
   return response.data.releaseCompleteByAccessKey;
 }
@@ -539,7 +544,7 @@ async function updateReleaseByPipeline(options: { stage?: string; version?: stri
     .filter(Boolean)
     .map((s) => s.slice(2))
     .join(", ");
-  const response = (await linearClient.client.rawRequest(
+  const response = await apiRequest<AccessKeyUpdateByPipelineResponse>(
     `
     mutation {
       releaseUpdateByPipelineByAccessKey(input: { ${inputParts} }) {
@@ -556,7 +561,7 @@ async function updateReleaseByPipeline(options: { stage?: string; version?: stri
       }
     }
     `,
-  )) as AccessKeyUpdateByPipelineResponse;
+  );
 
   const result = response.data.releaseUpdateByPipelineByAccessKey;
   return {
