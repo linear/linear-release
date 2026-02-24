@@ -7,6 +7,7 @@ export type ParsedCLIArgs = {
   stageName?: string;
   includePaths: string[];
   jsonOutput: boolean;
+  timeoutSeconds: number;
 };
 
 export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
@@ -18,10 +19,21 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
       stage: { type: "string" },
       "include-paths": { type: "string" },
       json: { type: "boolean", default: false },
+      timeout: { type: "string" },
     },
     allowPositionals: true,
     strict: true,
   });
+
+  const DEFAULT_TIMEOUT_SECONDS = 60;
+  let timeoutSeconds = DEFAULT_TIMEOUT_SECONDS;
+  if (values.timeout !== undefined) {
+    const parsed = Number(values.timeout);
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      throw new Error(`Invalid --timeout value: "${values.timeout}". Must be a positive number of seconds.`);
+    }
+    timeoutSeconds = parsed;
+  }
 
   return {
     command: positionals[0] || "sync",
@@ -35,6 +47,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
           .filter((p) => p.length > 0)
       : [],
     jsonOutput: values.json ?? false,
+    timeoutSeconds,
   };
 }
 

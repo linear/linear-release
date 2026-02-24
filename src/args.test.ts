@@ -98,4 +98,31 @@ describe("parseCLIArgs", () => {
     const result = parseCLIArgs(["sync", "--name", "Release 1.2.0"]);
     expect(getCLIWarnings(result)).toEqual([]);
   });
+
+  it("defaults --timeout to 60 seconds", () => {
+    const result = parseCLIArgs([]);
+    expect(result.timeoutSeconds).toBe(60);
+  });
+
+  it("parses --timeout with space syntax", () => {
+    const result = parseCLIArgs(["--timeout", "120"]);
+    expect(result.timeoutSeconds).toBe(120);
+  });
+
+  it("parses --timeout with = syntax", () => {
+    const result = parseCLIArgs(["--timeout=30"]);
+    expect(result.timeoutSeconds).toBe(30);
+  });
+
+  it("throws on non-numeric --timeout", () => {
+    expect(() => parseCLIArgs(["--timeout", "abc"])).toThrow('Invalid --timeout value: "abc"');
+  });
+
+  it("throws on zero --timeout", () => {
+    expect(() => parseCLIArgs(["--timeout", "0"])).toThrow('Invalid --timeout value: "0"');
+  });
+
+  it("throws on negative --timeout", () => {
+    expect(() => parseCLIArgs(["--timeout=-5"])).toThrow('Invalid --timeout value: "-5"');
+  });
 });
