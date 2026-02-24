@@ -1,0 +1,129 @@
+# Linear Release — CircleCI (Scheduled)
+#
+# Use when: Releases follow a branch cut model. Main syncs without a version,
+# release branches derive version from CIRCLE_BRANCH.
+#
+# Trigger: Auto on push, API trigger for later stage transitions and completion.
+# Customize: Branch patterns, stage names, auto-promotion stage.
+# Note: Set LINEAR_ACCESS_KEY and CIRCLE_TOKEN in CircleCI project settings.
+#
+# Branch creation detection: CircleCI has no built-in signal, so auto-promotion
+# checks the API for previous pipelines on the branch.
+#
+# Monorepo: CircleCI doesn't support path filtering natively. Use the `path-filtering`
+# orb or split into separate workflows and use the API to conditionally trigger.
+
+version: 2.1
+
+# Pipeline parameters — passed via CircleCI API for manual stage transitions.
+# On normal pushes, defaults apply and only the sync workflows run.
+parameters:
+  run-release-action:
+    type: boolean
+    default: false
+  action:
+    type: enum
+    enum: ["update", "complete"]
+    default: "update"
+  stage:
+    type: string
+    default: ""
+  release_version:
+    type: string
+    default: ""
+
+jobs:
+  linear-release-sync-main:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - run:
+          name: Download Linear Release
+          command: |
+            curl -sL https://github.com/linear/linear-release/releases/latest/download/linear-release-linux-x64 -o linear-release
+            chmod +x linear-release
+      - run:
+          name: Sync release
+          command: ./linear-release sync
+
+  linear-release-sync-release:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - run:
+          name: Download Linear Release
+          command: |
+            curl -sL https://github.com/linear/linear-release/releases/latest/download/linear-release-linux-x64 -o linear-release
+            chmod +x linear-release
+      - run:
+          name: Derive version and sync
+          command: |
+            RELEASE_VERSION="${CIRCLE_BRANCH#release/}"
+            ./linear-release sync --release-version="$RELEASE_VERSION"
+      - run:
+          name: Auto-promote on branch creation
+          command: |
+            RELEASE_VERSION="${CIRCLE_BRANCH#release/}"
+            # Check if this is the first pipeline on this branch (branch creation)
+            PIPELINE_COUNT=$(curl -s -H "Circle-Token: $CIRCLE_TOKEN" \
+              "https://circleci.com/api/v2/project/gh/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME/pipeline?branch=$CIRCLE_BRANCH" \
+              | jq '.items | length')
+            if [ "$PIPELINE_COUNT" -le 1 ]; then
+              ./linear-release update --release-version="$RELEASE_VERSION" --stage="code freeze"
+            fi
+
+  linear-release-action:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - run:
+          name: Download Linear Release
+          command: |
+            curl -sL https://github.com/linear/linear-release/releases/latest/download/linear-release-linux-x64 -o linear-release
+            chmod +x linear-release
+      - run:
+          name: Run release action
+          command: |
+            case "<< pipeline.parameters.action >>" in
+              update)
+                ./linear-release update \
+                  --release-version="<< pipeline.parameters.release_version >>" \
+                  --stage="<< pipeline.parameters.stage >>"
+                ;;
+              complete)
+                ./linear-release complete \
+                  --release-version="<< pipeline.parameters.release_version >>"
+                ;;
+            esac
+
+workflows:
+  # On normal pushes — sync issues to the release
+  release-sync-main:
+    when:
+      not: << pipeline.parameters.run-release-action >>
+    jobs:
+      - linear-release-sync-main:
+          filters:
+            branches:
+              only: main
+
+  release-sync-release:
+    when:
+      not: << pipeline.parameters.run-release-action >>
+    jobs:
+      - linear-release-sync-release:
+          filters:
+            branches:
+              only: /^release\/.*/
+
+  # Trigger via CircleCI API:
+  #   curl -X POST https://circleci.com/api/v2/project/gh/ORG/REPO/pipeline \
+  #     -H "Circle-Token: $CIRCLE_TOKEN" -H "Content-Type: application/json" \
+  #     -d '{"parameters": {"run-release-action": true, "action": "update", "stage": "qa", "release_version": "1.2.0"}}'
+  release-action:
+    when: << pipeline.parameters.run-release-action >>
+    jobs:
+      - linear-release-action

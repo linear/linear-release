@@ -28,7 +28,15 @@ Linear Release is a CLI tool that integrates your CI/CD pipeline with [Linear's 
 - Scans commits for Linear issue identifiers (e.g., `ENG-123`)
 - Detects pull request references in commit messages
 - Creates and updates releases in Linear
-- Tracks deployment stages (staging, production, etc.)
+- Tracks deployment stages for scheduled releases
+
+## Pipeline Types
+
+Linear Release supports two pipeline styles, configured in Linear:
+
+**Continuous**: Every deployment creates a completed release. Use `sync` after each deploy — the release is created already completed.
+
+**Scheduled**: An ongoing release collects changes over time, then moves through stages (e.g. "code freeze", "qa") before completion. Useful for release trains. Use `sync` to add issues, `update` to move between stages, and `complete` to finalize.
 
 ## Installation
 
@@ -76,6 +84,10 @@ chmod +x linear-release
 # Run
 LINEAR_ACCESS_KEY=<your-key> ./linear-release sync
 ```
+
+### AI-assisted setup
+
+Use the [Linear Release setup skill](./skills/linear-release-setup/SKILL.md) to generate CI configuration tailored to your project. It supports GitHub Actions, GitLab CI, CircleCI, and other platforms, and walks you through continuous vs. scheduled pipelines, monorepo path filtering, and more.
 
 ## Commands
 
