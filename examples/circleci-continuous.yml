@@ -1,0 +1,31 @@
+# Linear Release — CircleCI (Continuous Pipeline)
+#
+# Use when: Every deployment creates a completed release automatically.
+# Trigger: On every push to main.
+# Customize: Branch name, path filters (--include-paths).
+# Note: Set LINEAR_ACCESS_KEY in CircleCI project settings.
+
+version: 2.1
+
+jobs:
+  linear-release-sync:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - run:
+          name: Download Linear Release
+          command: |
+            curl -sL https://github.com/linear/linear-release/releases/latest/download/linear-release-linux-x64 -o linear-release
+            chmod +x linear-release
+      - run:
+          name: Sync release
+          command: ./linear-release sync
+
+workflows:
+  release:
+    jobs:
+      - linear-release-sync:
+          filters:
+            branches:
+              only: main

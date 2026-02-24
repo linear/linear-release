@@ -1,0 +1,22 @@
+# Linear Release — GitHub Actions (Continuous Pipeline)
+#
+# Use when: Every deployment creates a completed release automatically.
+# Trigger: On every push to main.
+# Customize: Branch name, path filters (include_paths input).
+
+name: Linear Release
+on:
+  push:
+    branches: [main]
+
+jobs:
+  linear-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: linear/linear-release-action@v0
+        with:
+          access_key: ${{ secrets.LINEAR_ACCESS_KEY }}

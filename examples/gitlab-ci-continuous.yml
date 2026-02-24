@@ -1,0 +1,21 @@
+# Linear Release — GitLab CI (Continuous Pipeline)
+#
+# Use when: Every deployment creates a completed release automatically.
+# Trigger: On every push to the default branch.
+# Customize: Branch rules, path filters (--include-paths).
+
+.linear-release-setup: &linear-release-setup
+  before_script:
+    - curl -sL https://github.com/linear/linear-release/releases/latest/download/linear-release-linux-x64 -o linear-release
+    - chmod +x linear-release
+
+linear-release-sync:
+  <<: *linear-release-setup
+  stage: deploy
+  script:
+    - ./linear-release sync
+  variables:
+    LINEAR_ACCESS_KEY: $LINEAR_ACCESS_KEY
+    GIT_DEPTH: 0
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

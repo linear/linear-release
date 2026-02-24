@@ -1,0 +1,79 @@
+# Linear Release — GitLab CI (Scheduled)
+#
+# Use when: Releases follow a branch cut model. Main syncs without a version,
+# release branches derive version from branch name. Branch creation auto-promotes
+# to "code freeze" (detected via CI_COMMIT_BEFORE_SHA being all zeros).
+#
+# Trigger: Auto on push, manual for later stage transitions and completion.
+# Customize: Branch patterns, stage names, version derivation.
+#
+# Monorepo: Add `changes` filter to the main job's rules only (not release branch jobs):
+#   rules:
+#     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+#       changes:
+#         - "apps/mobile/**"
+#         - "packages/shared/**"
+# Also add --include-paths to all sync commands.
+
+.linear-release-setup: &linear-release-setup
+  before_script:
+    - curl -sL https://github.com/linear/linear-release/releases/latest/download/linear-release-linux-x64 -o linear-release
+    - chmod +x linear-release
+
+# Main branch: sync without --release-version (targets current started release)
+linear-release-sync-main:
+  <<: *linear-release-setup
+  stage: deploy
+  script:
+    - ./linear-release sync
+  variables:
+    LINEAR_ACCESS_KEY: $LINEAR_ACCESS_KEY
+    GIT_DEPTH: 0
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Release branch: derive version from branch name and sync
+linear-release-sync-release:
+  <<: *linear-release-setup
+  stage: deploy
+  script:
+    - export RELEASE_VERSION="${CI_COMMIT_BRANCH#release/}"
+    - ./linear-release sync --release-version="$RELEASE_VERSION"
+    # Auto-promote on branch creation (first push to a new branch)
+    - |
+      if [ "$CI_COMMIT_BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+        ./linear-release update --release-version="$RELEASE_VERSION" --stage="code freeze"
+      fi
+  variables:
+    LINEAR_ACCESS_KEY: $LINEAR_ACCESS_KEY
+    GIT_DEPTH: 0
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^release\//
+
+# Trigger manually for later stage transitions and completion
+linear-release-update:
+  <<: *linear-release-setup
+  stage: deploy
+  script:
+    - export RELEASE_VERSION="${CI_COMMIT_BRANCH#release/}"
+    - ./linear-release update --release-version="$RELEASE_VERSION" --stage="$STAGE"
+  variables:
+    LINEAR_ACCESS_KEY: $LINEAR_ACCESS_KEY
+    STAGE: ""
+    GIT_DEPTH: 0
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^release\//
+      when: manual
+
+linear-release-complete:
+  <<: *linear-release-setup
+  stage: deploy
+  script:
+    - export RELEASE_VERSION="${CI_COMMIT_BRANCH#release/}"
+    - ./linear-release complete --release-version="$RELEASE_VERSION"
+  variables:
+    LINEAR_ACCESS_KEY: $LINEAR_ACCESS_KEY
+    GIT_DEPTH: 0
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^release\//
+      when: manual

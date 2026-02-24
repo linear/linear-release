@@ -1,0 +1,83 @@
+# Linear Release — GitHub Actions (Scheduled)
+#
+# Use when: Releases follow a branch cut model. Main collects changes into the
+# current release, a release branch is cut for stabilization, and branch creation
+# auto-promotes to "code freeze".
+#
+# Trigger: push to main (sync), push to release/* (sync + auto code freeze on
+# creation), or manual workflow_dispatch for later stages and completion.
+# Customize: Branch patterns, stage names, version derivation.
+#
+# Monorepo: GitHub Actions `paths` applies to all branches in a push trigger.
+# To path-filter main without filtering release branches, split into two files:
+#   File 1 (main): add `paths: [...]` to the push trigger, keep only the main sync step.
+#   File 2 (release): keep the release branch + workflow_dispatch logic as-is.
+# Add `include_paths` to the action in both files.
+
+name: Linear Release
+on:
+  push:
+    branches:
+      - main
+      - "release/**"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Release action"
+        required: true
+        type: choice
+        options:
+          - update
+          - complete
+      stage:
+        description: "Release stage (for update, e.g. qa)"
+        required: false
+        type: string
+      release_version:
+        description: "Release version"
+        required: true
+        type: string
+
+jobs:
+  linear-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Main branch: sync without --release-version (targets current started release)
+      - uses: linear/linear-release-action@v0
+        if: github.event_name == 'push' && !startsWith(github.ref_name, 'release/')
+        with:
+          access_key: ${{ secrets.LINEAR_ACCESS_KEY }}
+
+      # Release branch: derive version from branch name
+      - name: Set release version
+        if: github.event_name == 'push' && startsWith(github.ref_name, 'release/')
+        run: echo "RELEASE_VERSION=${GITHUB_REF_NAME#release/}" >> "$GITHUB_ENV"
+
+      # Release branch: sync with explicit version
+      - uses: linear/linear-release-action@v0
+        if: github.event_name == 'push' && startsWith(github.ref_name, 'release/')
+        with:
+          access_key: ${{ secrets.LINEAR_ACCESS_KEY }}
+          release_version: ${{ env.RELEASE_VERSION }}
+
+      # Branch creation: auto-promote to code freeze
+      - uses: linear/linear-release-action@v0
+        if: github.event_name == 'push' && startsWith(github.ref_name, 'release/') && github.event.created
+        with:
+          access_key: ${{ secrets.LINEAR_ACCESS_KEY }}
+          action: update
+          stage: code freeze
+          release_version: ${{ env.RELEASE_VERSION }}
+
+      # Manual: run the specified action (later stages, completion)
+      - uses: linear/linear-release-action@v0
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          access_key: ${{ secrets.LINEAR_ACCESS_KEY }}
+          action: ${{ inputs.action }}
+          stage: ${{ inputs.stage }}
+          release_version: ${{ inputs.release_version }}
