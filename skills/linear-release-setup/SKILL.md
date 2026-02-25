@@ -96,6 +96,18 @@ Stages can be **frozen** in Linear. A frozen stage makes `sync` (without `--rele
 | `update`   | Move release to a stage            | `--stage` (required), `--release-version`        |
 | `complete` | Mark release as complete           | `--release-version`                              |
 
+### GitHub Action Inputs
+
+When using `linear/linear-release-action@v0`, inputs map to CLI flags as follows:
+
+| CLI flag             | Action input                         |
+| -------------------- | ------------------------------------ |
+| (command positional) | `command`                            |
+| `--name`             | `name`                               |
+| `--release-version`  | `version` (alias: `release_version`) |
+| `--stage`            | `stage`                              |
+| `--include-paths`    | `include_paths`                      |
+
 ### Path Filtering (Monorepos)
 
 Path filters can be configured in Linear's pipeline settings or via the CLI's `--include-paths` flag (CLI takes precedence if both are set). If the user has already configured paths in Linear, the CLI flag is optional.

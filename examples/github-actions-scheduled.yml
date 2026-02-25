@@ -22,8 +22,8 @@ on:
       - "release/**"
   workflow_dispatch:
     inputs:
-      action:
-        description: "Release action"
+      command:
+        description: "Release command"
         required: true
         type: choice
         options:
@@ -33,7 +33,7 @@ on:
         description: "Release stage (for update, e.g. qa)"
         required: false
         type: string
-      release_version:
+      version:
         description: "Release version"
         required: true
         type: string
@@ -62,22 +62,22 @@ jobs:
         if: github.event_name == 'push' && startsWith(github.ref_name, 'release/')
         with:
           access_key: ${{ secrets.LINEAR_ACCESS_KEY }}
-          release_version: ${{ env.RELEASE_VERSION }}
+          version: ${{ env.RELEASE_VERSION }}
 
       # Branch creation: auto-promote to code freeze
       - uses: linear/linear-release-action@v0
         if: github.event_name == 'push' && startsWith(github.ref_name, 'release/') && github.event.created
         with:
           access_key: ${{ secrets.LINEAR_ACCESS_KEY }}
-          action: update
+          command: update
           stage: code freeze
-          release_version: ${{ env.RELEASE_VERSION }}
+          version: ${{ env.RELEASE_VERSION }}
 
       # Manual: run the specified action (later stages, completion)
       - uses: linear/linear-release-action@v0
         if: github.event_name == 'workflow_dispatch'
         with:
           access_key: ${{ secrets.LINEAR_ACCESS_KEY }}
-          action: ${{ inputs.action }}
+          command: ${{ inputs.command }}
           stage: ${{ inputs.stage }}
-          release_version: ${{ inputs.release_version }}
+          version: ${{ inputs.version }}
