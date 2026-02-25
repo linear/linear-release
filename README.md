@@ -87,7 +87,13 @@ LINEAR_ACCESS_KEY=<your-key> ./linear-release sync
 
 ### AI-assisted setup
 
-Use the [Linear Release setup skill](./skills/linear-release-setup/SKILL.md) to generate CI configuration tailored to your project. It supports GitHub Actions, GitLab CI, CircleCI, and other platforms, and walks you through continuous vs. scheduled pipelines, monorepo path filtering, and more.
+Use the Linear Release setup skill to generate CI configuration tailored to your project. It supports GitHub Actions, GitLab CI, CircleCI, and other platforms, and walks you through continuous vs. scheduled pipelines, monorepo path filtering, and more.
+
+Copy the [SKILL.md](./skills/linear-release-setup/SKILL.md) into your project, or install it with [skills.sh](https://skills.sh):
+
+```bash
+npx skills add linear/linear-release
+```
 
 ## Commands
 
