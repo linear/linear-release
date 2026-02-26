@@ -45,6 +45,7 @@ Options:
   --release-version=<version>  Release version identifier
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
+  --timeout=<seconds>        Abort if the operation exceeds this duration (default: 60)
   --json                     Output result as JSON
   -v, --version              Show version number
   -h, --help                 Show this help message
@@ -77,7 +78,7 @@ try {
   console.error("Run linear-release --help for usage information.");
   process.exit(1);
 }
-const { command, releaseName, releaseVersion, stageName, includePaths, jsonOutput } = parsedArgs;
+const { command, releaseName, releaseVersion, stageName, includePaths, jsonOutput, timeoutSeconds } = parsedArgs;
 const cliWarnings = getCLIWarnings(parsedArgs);
 if (jsonOutput) {
   setStderr(true);
@@ -602,7 +603,20 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(`Error: ${error.message}`);
+const timeoutMs = timeoutSeconds * 1000;
+const timeout = setTimeout(() => {
+  console.error(
+    `Error: Operation timed out after ${timeoutSeconds}s. This may indicate a large repository or slow network. Use --timeout=<seconds> to increase the limit.`,
+  );
   process.exit(1);
-});
+}, timeoutMs);
+timeout.unref();
+
+main()
+  .catch((error) => {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  })
+  .finally(() => {
+    clearTimeout(timeout);
+  });
