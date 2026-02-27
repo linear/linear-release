@@ -384,6 +384,35 @@ describe("commit message magic word behavior", () => {
   });
 });
 
+describe("revert branch handling", () => {
+  it("blocks extraction from merge commit with revert branch name", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: "revert-571-romain/bac-39",
+      message: "Merge pull request #572 from org/revert-571-romain/bac-39",
+    });
+    expect(result).toEqual([]);
+  });
+
+  it("blocks extraction when revert branch has multiple identifiers", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: "revert-571-romain/drive-320-and-drive-321",
+      message: null,
+    });
+    expect(result).toEqual([]);
+  });
+
+  it("blocks PR number extraction from revert branch", () => {
+    const result = extractPullRequestNumbersForCommit({
+      sha: "abc",
+      branchName: "revert-571-romain/bac-39",
+      message: "Merge pull request #572 from org/revert-571-romain/bac-39",
+    });
+    expect(result).toEqual([]);
+  });
+});
+
 describe("extractPullRequestNumbersForCommit", () => {
   // Messages that should extract PR numbers
   it.each([

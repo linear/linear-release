@@ -134,6 +134,12 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): s
     return [];
   }
 
+  // GitHub auto-generates branch names like "revert-571-romain/bac-39" for revert PRs.
+  // Block extraction to prevent the original issue identifier from being added to the release.
+  if (/(^|\/)revert-\d+-/i.test(commit.branchName ?? "")) {
+    return [];
+  }
+
   const found = new Map<string, string>();
 
   // Branch name: extract all matches (branch names are always intentional)
@@ -169,6 +175,12 @@ export function extractPullRequestNumbersForCommit(commit: CommitContext): numbe
   // Skip reverts - they reference the original PR, not a new one
   if (/^Revert "/i.test(message)) {
     log(`Skipping revert commit ${commit.sha} with message: "${message}"`);
+    return [];
+  }
+
+  // Skip merge commits of revert PRs — branch name like "revert-571-romain/bac-39"
+  if (/(^|\/)revert-\d+-/i.test(commit.branchName ?? "")) {
+    log(`Skipping revert merge commit ${commit.sha}`);
     return [];
   }
 
