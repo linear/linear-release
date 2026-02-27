@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { extractLinearIssueIdentifiersForCommit, extractPullRequestNumbersForCommit } from "./extractors";
+import {
+  extractLinearIssueIdentifiersForCommit,
+  extractPullRequestNumbersForCommit,
+  getRevertBranchDepth,
+  getRevertMessageDepth,
+} from "./extractors";
 import { CommitContext } from "./types";
 
 describe("extractLinearIssueIdentifiersForCommit", () => {
@@ -88,7 +93,7 @@ describe("extractLinearIssueIdentifiersForCommit", () => {
   });
 });
 
-describe("version suffix handling ", () => {
+describe("version suffix handling", () => {
   // Version strings should NOT match
   it.each([
     ["release/ios-1.57.1", []],
@@ -124,7 +129,7 @@ describe("version suffix handling ", () => {
   });
 });
 
-describe("leading zero rejection ", () => {
+describe("leading zero rejection", () => {
   it("rejects LIN-0004 style identifiers", () => {
     const result = extractLinearIssueIdentifiersForCommit({
       sha: "abc",
@@ -135,8 +140,7 @@ describe("leading zero rejection ", () => {
   });
 });
 
-describe("underscore handling ", () => {
-  // Underscores act as word boundaries
+describe("underscore handling", () => {
   it.each([
     ["story/LIN-123_LIN-321_hello_world", ["LIN-123", "LIN-321"]],
     ["username/lin-123_branch_name", ["LIN-123"]],
@@ -150,7 +154,7 @@ describe("underscore handling ", () => {
   });
 });
 
-describe("multiple identifiers ", () => {
+describe("multiple identifiers", () => {
   it.each([
     ["Fixes LIN-123 and LIN-321", ["LIN-123", "LIN-321"]],
     ["Closes LIN-123, LIN-321", ["LIN-123", "LIN-321"]],
@@ -410,6 +414,50 @@ describe("revert branch handling", () => {
       message: "Merge pull request #572 from org/revert-571-romain/bac-39",
     });
     expect(result).toEqual([]);
+  });
+
+  it("blocks add-extraction from message-only revert with magic word", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: 'Revert "Fixes ENG-100"',
+    });
+    expect(result).toEqual([]);
+  });
+
+  it("allows extraction from revert-of-revert branch (even depth)", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: "revert-572-revert-571-romain/bac-39",
+      message: null,
+    });
+    expect(result).toEqual(["BAC-39"]);
+  });
+});
+
+describe("getRevertBranchDepth", () => {
+  it.each([
+    [null, 0],
+    ["romain/bac-39", 0],
+    ["revert-571-romain/bac-39", 1],
+    ["revert-572-revert-571-romain/bac-39", 2],
+    ["revert-574-revert-573-revert-572-romain/bac-39", 3],
+    ["org/revert-572-revert-571-romain/bac-39", 2],
+  ])("branch %j → depth %d", (branch, expected) => {
+    expect(getRevertBranchDepth(branch)).toBe(expected);
+  });
+});
+
+describe("getRevertMessageDepth", () => {
+  it.each([
+    [null, 0],
+    ["Fix memory leak", 0],
+    ['Revert "DRIVE-320: Fix"', 1],
+    ['Revert "Revert "DRIVE-320: Fix""', 2],
+    ['Revert "Revert "Revert "DRIVE-320: Fix"""', 3],
+    ['Reapply "DRIVE-320: Fix"', 0],
+  ])("message %j → depth %d", (message, expected) => {
+    expect(getRevertMessageDepth(message)).toBe(expected);
   });
 });
 
