@@ -224,8 +224,9 @@ export function extractPullRequestNumbersForCommit(commit: CommitContext): numbe
  * e.g. "revert-572-revert-571-romain/bac-39" → { depth: 2, inner: "romain/bac-39" }
  */
 export function parseRevertBranch(branchName: string): { depth: number; inner: string } {
-  // Full refs can have org/ prefixes (e.g. "org/revert-571-..."), strip to the revert pattern
-  let name = branchName.replace(/^.*\/(?=revert-\d+-)/i, "");
+  // Full refs can have org/ prefixes (e.g. "org/revert-571-..."), strip to the revert pattern.
+  // Non-greedy so we stop at the first revert-N- match, not the last (preserves nested depth).
+  let name = branchName.replace(/^.*?\/(?=revert-\d+-)/i, "");
   let depth = 0;
   while (/^revert-\d+-/i.test(name)) {
     name = name.replace(/^revert-\d+-/i, "");

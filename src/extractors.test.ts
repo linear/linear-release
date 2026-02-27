@@ -442,6 +442,7 @@ describe("getRevertBranchDepth", () => {
     ["revert-571-romain/bac-39", 1],
     ["revert-572-revert-571-romain/bac-39", 2],
     ["revert-574-revert-573-revert-572-romain/bac-39", 3],
+    ["org/revert-572-revert-571-romain/bac-39", 2],
   ])("branch %j → depth %d", (branch, expected) => {
     expect(getRevertBranchDepth(branch)).toBe(expected);
   });
