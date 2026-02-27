@@ -134,19 +134,23 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): s
     return [];
   }
 
-  // GitHub auto-generates branch names like "revert-571-romain/bac-39" for revert PRs.
-  // Block extraction to prevent the original issue identifier from being added to the release.
-  if (/(^|\/)revert-\d+-/i.test(commit.branchName ?? "")) {
-    log(`Skipping revert branch ${commit.branchName} for commit ${commit.sha}`);
+  // Odd depth = the commit is undoing previous work (a revert), so we must not
+  // count its identifiers as "added". Even depth = revert-of-revert (re-add).
+  const { depth: branchDepth, inner: strippedBranch } = parseRevertBranch(commit.branchName ?? "");
+  if (branchDepth % 2 === 1) {
+    log(`Skipping revert branch "${commit.branchName}" (depth ${branchDepth}) for commit ${commit.sha}`);
+    return [];
+  }
+  const { depth: messageDepth } = parseRevertMessage(commit.message ?? "");
+  if (messageDepth % 2 === 1) {
+    log(`Skipping revert message (depth ${messageDepth}) for commit ${commit.sha}`);
     return [];
   }
 
   const found = new Map<string, string>();
 
-  // Branch name: extract all matches (branch names are always intentional)
-  const branchName = commit.branchName ?? "";
-  if (branchName.length > 0) {
-    for (const match of matchAllIdentifiers(branchName)) {
+  if (strippedBranch.length > 0) {
+    for (const match of matchAllIdentifiers(strippedBranch)) {
       if (!found.has(match.identifier)) {
         found.set(match.identifier, match.rawIdentifier);
       }
@@ -179,8 +183,9 @@ export function extractPullRequestNumbersForCommit(commit: CommitContext): numbe
     return [];
   }
 
-  // Skip merge commits of revert PRs — branch name like "revert-571-romain/bac-39"
-  if (/(^|\/)revert-\d+-/i.test(commit.branchName ?? "")) {
+  // Revert merge commits reference the original PR number, not a new one.
+  // Even depth (revert-of-revert) falls through to normal extraction.
+  if (getRevertBranchDepth(commit.branchName) % 2 === 1) {
     log(`Skipping revert merge commit ${commit.sha}`);
     return [];
   }
@@ -212,4 +217,45 @@ export function extractPullRequestNumbersForCommit(commit: CommitContext): numbe
   }
 
   return [...new Set(prNumbers)];
+}
+
+/**
+ * Strip revert-N- prefixes from a branch name and count nesting depth.
+ * e.g. "revert-572-revert-571-romain/bac-39" → { depth: 2, inner: "romain/bac-39" }
+ */
+export function parseRevertBranch(branchName: string): { depth: number; inner: string } {
+  // Full refs can have org/ prefixes (e.g. "org/revert-571-..."), strip to the revert pattern
+  let name = branchName.replace(/^.*\/(?=revert-\d+-)/i, "");
+  let depth = 0;
+  while (/^revert-\d+-/i.test(name)) {
+    name = name.replace(/^revert-\d+-/i, "");
+    depth++;
+  }
+  return { depth, inner: name };
+}
+
+export function getRevertBranchDepth(branchName: string | null | undefined): number {
+  if (!branchName) return 0;
+  return parseRevertBranch(branchName).depth;
+}
+
+/**
+ * Unwrap Revert "..." layers from a commit message and count nesting depth.
+ * e.g. 'Revert "Revert "DRIVE-320: Fix""' → { depth: 2, inner: "DRIVE-320: Fix" }
+ */
+export function parseRevertMessage(message: string): { depth: number; inner: string } {
+  let text = message;
+  let depth = 0;
+  while (/^Revert "/i.test(text)) {
+    const match = text.match(/^Revert "(.+)"(.*)$/s);
+    if (!match) break;
+    text = match[1]!;
+    depth++;
+  }
+  return { depth, inner: text };
+}
+
+export function getRevertMessageDepth(message: string | null | undefined): number {
+  if (!message) return 0;
+  return parseRevertMessage(message).depth;
 }
