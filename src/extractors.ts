@@ -219,11 +219,7 @@ export function extractPullRequestNumbersForCommit(commit: CommitContext): numbe
   return [...new Set(prNumbers)];
 }
 
-/**
- * Strip revert-N- prefixes from a branch name and count nesting depth.
- * e.g. "revert-572-revert-571-romain/bac-39" → { depth: 2, inner: "romain/bac-39" }
- */
-export function parseRevertBranch(branchName: string): { depth: number; inner: string } {
+function parseRevertBranch(branchName: string): { depth: number; inner: string } {
   // Full refs can have org/ prefixes (e.g. "org/revert-571-..."), strip to the revert pattern.
   // Non-greedy so we stop at the first revert-N- match, not the last (preserves nested depth).
   let name = branchName.replace(/^.*?\/(?=revert-\d+-)/i, "");
@@ -235,16 +231,16 @@ export function parseRevertBranch(branchName: string): { depth: number; inner: s
   return { depth, inner: name };
 }
 
+/**
+ * Strip revert-N- prefixes from a branch name and count nesting depth.
+ * e.g. "revert-572-revert-571-romain/bac-39" → { depth: 2, inner: "romain/bac-39" }
+ */
 export function getRevertBranchDepth(branchName: string | null | undefined): number {
   if (!branchName) return 0;
   return parseRevertBranch(branchName).depth;
 }
 
-/**
- * Unwrap Revert "..." layers from a commit message and count nesting depth.
- * e.g. 'Revert "Revert "DRIVE-320: Fix""' → { depth: 2, inner: "DRIVE-320: Fix" }
- */
-export function parseRevertMessage(message: string): { depth: number; inner: string } {
+function parseRevertMessage(message: string): { depth: number; inner: string } {
   let text = message;
   let depth = 0;
   while (/^Revert "/i.test(text)) {
@@ -256,6 +252,10 @@ export function parseRevertMessage(message: string): { depth: number; inner: str
   return { depth, inner: text };
 }
 
+/**
+ * Unwrap Revert "..." layers from a commit message and count nesting depth.
+ * e.g. 'Revert "Revert "DRIVE-320: Fix""' → { depth: 2, inner: "DRIVE-320: Fix" }
+ */
 export function getRevertMessageDepth(message: string | null | undefined): number {
   if (!message) return 0;
   return parseRevertMessage(message).depth;
