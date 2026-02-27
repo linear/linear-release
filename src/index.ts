@@ -191,7 +191,13 @@ async function syncCommand(): Promise<{
     return null;
   }
 
-  const { issueReferences, prNumbers, debugSink } = scanCommits(commits, effectiveIncludePaths);
+  // git log returns newest-first; scanCommits needs chronological (oldest-first) for last-write-wins
+  commits.reverse();
+
+  const { issueReferences, revertedIssueReferences, prNumbers, debugSink } = scanCommits(
+    commits,
+    effectiveIncludePaths,
+  );
 
   log(`Debug sink: ${JSON.stringify(debugSink, null, 2)}`);
 
@@ -201,9 +207,13 @@ async function syncCommand(): Promise<{
     log(`Retrieved issue keys: ${issueReferences.map((f) => f.identifier).join(", ")}`);
   }
 
+  if (revertedIssueReferences.length > 0) {
+    log(`Reverted issue keys: ${revertedIssueReferences.map((f) => f.identifier).join(", ")}`);
+  }
+
   const repoInfo = getRepoInfo();
 
-  const release = await syncRelease(issueReferences, prNumbers, repoInfo, debugSink);
+  const release = await syncRelease(issueReferences, revertedIssueReferences, prNumbers, repoInfo, debugSink);
   log(
     `Issues [${issueReferences.map((f) => f.identifier).join(", ")}] and pull requests [${prNumbers.join(
       ", ",
@@ -342,6 +352,7 @@ async function getPipelineSettings(): Promise<{ includePathPatterns: string[] }>
 
 async function syncRelease(
   issueReferences: IssueReference[],
+  revertedIssueReferences: IssueReference[],
   prNumbers: number[],
   repoInfo: RepoInfo | null,
   debugSink: DebugSink,
@@ -379,6 +390,7 @@ async function syncRelease(
         version: releaseVersion,
         commitSha: currentSha,
         issueReferences,
+        revertedIssueReferences: revertedIssueReferences.length > 0 ? revertedIssueReferences : undefined,
         pullRequestReferences: prNumbers.map((number) => ({
           repositoryOwner: owner,
           repositoryName: name,

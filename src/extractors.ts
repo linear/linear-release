@@ -129,7 +129,12 @@ function matchMagicWordIdentifiers(text: string): IdentifierMatch[] {
   return results;
 }
 
-export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): string[] {
+export type ExtractedIdentifier = {
+  identifier: string;
+  source: "branch_name" | "commit_message";
+};
+
+export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): ExtractedIdentifier[] {
   if (!commit) {
     return [];
   }
@@ -147,12 +152,12 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): s
     return [];
   }
 
-  const found = new Map<string, string>();
+  const found = new Map<string, ExtractedIdentifier>();
 
   if (strippedBranch.length > 0) {
     for (const match of matchAllIdentifiers(strippedBranch)) {
       if (!found.has(match.identifier)) {
-        found.set(match.identifier, match.rawIdentifier);
+        found.set(match.identifier, { identifier: match.identifier, source: "branch_name" });
       }
     }
   }
@@ -162,12 +167,12 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): s
   if (message.length > 0) {
     for (const match of matchMagicWordIdentifiers(message)) {
       if (!found.has(match.identifier)) {
-        found.set(match.identifier, match.rawIdentifier);
+        found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
       }
     }
   }
 
-  return Array.from(found.keys());
+  return Array.from(found.values());
 }
 
 export function extractPullRequestNumbersForCommit(commit: CommitContext): number[] {
@@ -259,4 +264,37 @@ function parseRevertMessage(message: string): { depth: number; inner: string } {
 export function getRevertMessageDepth(message: string | null | undefined): number {
   if (!message) return 0;
   return parseRevertMessage(message).depth;
+}
+
+/** Extract identifiers being reverted. Returns [] if not an odd-depth revert. */
+export function extractRevertedIssueIdentifiersForCommit(commit: CommitContext): ExtractedIdentifier[] {
+  if (!commit) return [];
+
+  const { depth: branchDepth, inner: originalBranch } = parseRevertBranch(commit.branchName ?? "");
+  const { depth: messageDepth, inner: innerMessage } = parseRevertMessage(commit.message ?? "");
+
+  // At least one of branch/message must have odd depth (i.e., be a revert) to extract
+  if (branchDepth % 2 === 0 && messageDepth % 2 === 0) return [];
+
+  const found = new Map<string, ExtractedIdentifier>();
+
+  // Use magic-word gating on the inner message, same as the add path, to avoid
+  // false positives from generic word-number tokens (e.g. "Bump v1-2 to v1-3").
+  if (messageDepth % 2 === 1) {
+    for (const match of matchMagicWordIdentifiers(innerMessage)) {
+      if (!found.has(match.identifier)) {
+        found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
+      }
+    }
+  }
+
+  if (branchDepth % 2 === 1) {
+    for (const match of matchAllIdentifiers(originalBranch)) {
+      if (!found.has(match.identifier)) {
+        found.set(match.identifier, { identifier: match.identifier, source: "branch_name" });
+      }
+    }
+  }
+
+  return Array.from(found.values());
 }
