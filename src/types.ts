@@ -104,6 +104,7 @@ export type PullRequestSource = {
 export type DebugSink = {
   inspectedShas: string[]; // From oldest to newest
   issues: Record<string, IssueSource[]>; // Issue identifier -> array of sources
+  revertedIssues: Record<string, IssueSource[]>; // Issue identifier -> array of sources (reverted)
   pullRequests: PullRequestSource[]; // PR numbers found in commits
   includePaths: string[] | null; // Path filters applied during commit scanning
 };

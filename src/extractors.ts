@@ -19,8 +19,7 @@ const ISSUE_IDENTIFIER_REGEX = new RegExp(
   "gi",
 );
 
-const LINEAR_ISSUE_URL_REGEX =
-  /https?:\/\/linear\.app\/[\w-]+\/issue\/(\w{1,7}-[0-9]{1,9})(?:\/[\w-]*)*/gi;
+const LINEAR_ISSUE_URL_REGEX = /https?:\/\/linear\.app\/[\w-]+\/issue\/(\w{1,7}-[0-9]{1,9})(?:\/[\w-]*)*/gi;
 
 function normalizeLinearUrls(text: string): string {
   return text.replace(LINEAR_ISSUE_URL_REGEX, "$1");
@@ -83,12 +82,7 @@ type IdentifierMatch = {
 function parseMatch(match: RegExpExecArray): IdentifierMatch | undefined {
   const [, rawIdentifier, teamKey, numberString] = match;
   // Reject leading zeros (e.g., LIN-0004)
-  if (
-    !rawIdentifier ||
-    !teamKey ||
-    !numberString ||
-    Number(numberString).toString().length !== numberString.length
-  ) {
+  if (!rawIdentifier || !teamKey || !numberString || Number(numberString).toString().length !== numberString.length) {
     return;
   }
   return {
@@ -135,38 +129,35 @@ function matchMagicWordIdentifiers(text: string): IdentifierMatch[] {
   return results;
 }
 
-export function extractLinearIssueIdentifiersForCommit(
-  commit: CommitContext,
-): string[] {
+export type ExtractedIdentifier = {
+  identifier: string;
+  source: "branch_name" | "commit_message";
+};
+
+export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): ExtractedIdentifier[] {
   if (!commit) {
     return [];
   }
 
   // Odd depth = the commit is undoing previous work (a revert), so we must not
   // count its identifiers as "added". Even depth = revert-of-revert (re-add).
-  const { depth: branchDepth, inner: strippedBranch } = parseRevertBranch(
-    commit.branchName ?? "",
-  );
+  const { depth: branchDepth, inner: strippedBranch } = parseRevertBranch(commit.branchName ?? "");
   if (branchDepth % 2 === 1) {
-    log(
-      `Skipping revert branch "${commit.branchName}" (depth ${branchDepth}) for commit ${commit.sha}`,
-    );
+    log(`Skipping revert branch "${commit.branchName}" (depth ${branchDepth}) for commit ${commit.sha}`);
     return [];
   }
   const { depth: messageDepth } = parseRevertMessage(commit.message ?? "");
   if (messageDepth % 2 === 1) {
-    log(
-      `Skipping revert message (depth ${messageDepth}) for commit ${commit.sha}`,
-    );
+    log(`Skipping revert message (depth ${messageDepth}) for commit ${commit.sha}`);
     return [];
   }
 
-  const found = new Map<string, string>();
+  const found = new Map<string, ExtractedIdentifier>();
 
   if (strippedBranch.length > 0) {
     for (const match of matchAllIdentifiers(strippedBranch)) {
       if (!found.has(match.identifier)) {
-        found.set(match.identifier, match.rawIdentifier);
+        found.set(match.identifier, { identifier: match.identifier, source: "branch_name" });
       }
     }
   }
@@ -176,17 +167,15 @@ export function extractLinearIssueIdentifiersForCommit(
   if (message.length > 0) {
     for (const match of matchMagicWordIdentifiers(message)) {
       if (!found.has(match.identifier)) {
-        found.set(match.identifier, match.rawIdentifier);
+        found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
       }
     }
   }
 
-  return Array.from(found.keys());
+  return Array.from(found.values());
 }
 
-export function extractPullRequestNumbersForCommit(
-  commit: CommitContext,
-): number[] {
+export function extractPullRequestNumbersForCommit(commit: CommitContext): number[] {
   if (!commit) {
     return [];
   }
@@ -212,18 +201,14 @@ export function extractPullRequestNumbersForCommit(
   const title = message.split(/\r?\n/)[0] ?? "";
   const squashMatch = title.match(/\(#(\d+)\)$/);
   if (squashMatch) {
-    log(
-      `Found PR number ${squashMatch[1]} in commit ${commit.sha} using squash format: "${message}"`,
-    );
+    log(`Found PR number ${squashMatch[1]} in commit ${commit.sha} using squash format: "${message}"`);
     prNumbers.push(Number.parseInt(squashMatch[1]!, 10));
   }
 
   // GitHub merge: "Merge pull request #123 from ..." - must be at start
   const mergeMatch = message.match(/^Merge pull request #(\d+)/i);
   if (mergeMatch) {
-    log(
-      `Found PR number ${mergeMatch[1]} in commit ${commit.sha} using merge format: "${message}"`,
-    );
+    log(`Found PR number ${mergeMatch[1]} in commit ${commit.sha} using merge format: "${message}"`);
     prNumbers.push(Number.parseInt(mergeMatch[1]!, 10));
   }
 
@@ -231,9 +216,7 @@ export function extractPullRequestNumbersForCommit(
   if (prNumbers.length === 0) {
     const messageMatches = message.matchAll(/#(\d+)/g);
     for (const match of messageMatches) {
-      log(
-        `Found PR number ${match[1]} in commit ${commit.sha} by extracting from message: "${message}"`,
-      );
+      log(`Found PR number ${match[1]} in commit ${commit.sha} by extracting from message: "${message}"`);
       prNumbers.push(Number.parseInt(match[1]!, 10));
     }
   }
@@ -260,9 +243,7 @@ function parseRevertBranch(branchName: string): {
  * Strip revert-N- prefixes from a branch name and count nesting depth.
  * e.g. "revert-572-revert-571-romain/bac-39" → { depth: 2, inner: "romain/bac-39" }
  */
-export function getRevertBranchDepth(
-  branchName: string | null | undefined,
-): number {
+export function getRevertBranchDepth(branchName: string | null | undefined): number {
   if (!branchName) return 0;
   return parseRevertBranch(branchName).depth;
 }
@@ -283,9 +264,40 @@ function parseRevertMessage(message: string): { depth: number; inner: string } {
  * Unwrap Revert "..." layers from a commit message and count nesting depth.
  * e.g. 'Revert "Revert "DRIVE-320: Fix""' → { depth: 2, inner: "DRIVE-320: Fix" }
  */
-export function getRevertMessageDepth(
-  message: string | null | undefined,
-): number {
+export function getRevertMessageDepth(message: string | null | undefined): number {
   if (!message) return 0;
   return parseRevertMessage(message).depth;
+}
+
+/** Extract identifiers being reverted. Returns [] if not an odd-depth revert. */
+export function extractRevertedIssueIdentifiersForCommit(commit: CommitContext): ExtractedIdentifier[] {
+  if (!commit) return [];
+
+  const { depth: branchDepth, inner: originalBranch } = parseRevertBranch(commit.branchName ?? "");
+  const { depth: messageDepth, inner: innerMessage } = parseRevertMessage(commit.message ?? "");
+
+  // At least one of branch/message must have odd depth (i.e., be a revert) to extract
+  if (branchDepth % 2 === 0 && messageDepth % 2 === 0) return [];
+
+  const found = new Map<string, ExtractedIdentifier>();
+
+  // Use magic-word gating on the inner message, same as the add path, to avoid
+  // false positives from generic word-number tokens (e.g. "Bump v1-2 to v1-3").
+  if (messageDepth % 2 === 1) {
+    for (const match of matchMagicWordIdentifiers(innerMessage)) {
+      if (!found.has(match.identifier)) {
+        found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
+      }
+    }
+  }
+
+  if (branchDepth % 2 === 1) {
+    for (const match of matchAllIdentifiers(originalBranch)) {
+      if (!found.has(match.identifier)) {
+        found.set(match.identifier, { identifier: match.identifier, source: "branch_name" });
+      }
+    }
+  }
+
+  return Array.from(found.values());
 }

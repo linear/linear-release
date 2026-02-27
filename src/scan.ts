@@ -1,20 +1,34 @@
-import { extractLinearIssueIdentifiersForCommit, extractPullRequestNumbersForCommit } from "./extractors";
+import {
+  extractLinearIssueIdentifiersForCommit,
+  extractPullRequestNumbersForCommit,
+  extractRevertedIssueIdentifiersForCommit,
+} from "./extractors";
 import { log } from "./log";
-import { CommitContext, DebugSink, IssueReference, IssueSource, PullRequestSource } from "./types";
+import { CommitContext, DebugSink, IssueReference, PullRequestSource } from "./types";
 
+/**
+ * Scan commits and produce added/reverted issue references using last-write-wins.
+ * Expects commits in chronological order (oldest first). The caller must reverse
+ * git log output before passing it here.
+ */
 export function scanCommits(
   commits: CommitContext[],
   includePaths: string[] | null,
 ): {
   issueReferences: IssueReference[];
+  revertedIssueReferences: IssueReference[];
   prNumbers: number[];
   debugSink: DebugSink;
 } {
-  const seen = new Map<string, IssueReference>();
+  const lastAction = new Map<string, "added" | "reverted">();
+  const addedRefs = new Map<string, IssueReference>();
+  const revertedRefs = new Map<string, IssueReference>();
+
   const prNumbersSet = new Set<number>();
   const debugSink: DebugSink = {
     inspectedShas: [],
     issues: {},
+    revertedIssues: {},
     pullRequests: [],
     includePaths,
   };
@@ -22,56 +36,36 @@ export function scanCommits(
   for (const commit of commits) {
     debugSink.inspectedShas.push(commit.sha);
 
-    const fromBranch = extractLinearIssueIdentifiersForCommit({
-      sha: commit.sha,
-      branchName: commit.branchName,
-      message: null,
-    });
-
-    for (const key of fromBranch) {
-      if (!debugSink.issues[key]) {
-        debugSink.issues[key] = [];
+    for (const { identifier, source } of extractRevertedIssueIdentifiersForCommit(commit)) {
+      if (!debugSink.revertedIssues[identifier]) {
+        debugSink.revertedIssues[identifier] = [];
       }
-
-      const source: IssueSource = {
+      debugSink.revertedIssues[identifier].push({
         sha: commit.sha,
-        source: "branch_name",
-        value: commit.branchName ?? "",
-      };
-      debugSink.issues[key].push(source);
+        source,
+        value: source === "branch_name" ? (commit.branchName ?? "") : (commit.message ?? ""),
+      });
 
-      if (seen.has(key)) {
-        continue;
-      }
-
-      seen.set(key, { identifier: key, commitSha: commit.sha });
-      log(`Detected issue key ${key} from branch name "${commit.branchName ?? ""}"`);
+      lastAction.set(identifier, "reverted");
+      revertedRefs.set(identifier, { identifier, commitSha: commit.sha });
+      log(`Detected reverted issue key ${identifier} from commit ${commit.sha}`);
     }
 
-    const fromMessage = extractLinearIssueIdentifiersForCommit({
-      sha: commit.sha,
-      branchName: null,
-      message: commit.message,
-    });
-
-    for (const key of fromMessage) {
-      if (!debugSink.issues[key]) {
-        debugSink.issues[key] = [];
+    for (const { identifier, source } of extractLinearIssueIdentifiersForCommit(commit)) {
+      if (!debugSink.issues[identifier]) {
+        debugSink.issues[identifier] = [];
       }
-
-      const source: IssueSource = {
+      debugSink.issues[identifier].push({
         sha: commit.sha,
-        source: "commit_message",
-        value: commit.message ?? "",
-      };
-      debugSink.issues[key].push(source);
+        source,
+        value: source === "branch_name" ? (commit.branchName ?? "") : (commit.message ?? ""),
+      });
 
-      if (seen.has(key)) {
-        continue;
-      }
-
-      seen.set(key, { identifier: key, commitSha: commit.sha });
-      log(`Detected issue key ${key} from commit message "${commit.message ?? ""}"`);
+      lastAction.set(identifier, "added");
+      addedRefs.set(identifier, { identifier, commitSha: commit.sha });
+      log(
+        `Detected issue key ${identifier} from ${source === "branch_name" ? `branch "${commit.branchName}"` : `message "${commit.message}"`}`,
+      );
     }
 
     for (const prNumber of extractPullRequestNumbersForCommit(commit)) {
@@ -88,8 +82,19 @@ export function scanCommits(
     }
   }
 
+  const issueReferences: IssueReference[] = [];
+  const revertedIssueReferences: IssueReference[] = [];
+  for (const [identifier, action] of lastAction) {
+    if (action === "added") {
+      issueReferences.push(addedRefs.get(identifier)!);
+    } else {
+      revertedIssueReferences.push(revertedRefs.get(identifier)!);
+    }
+  }
+
   return {
-    issueReferences: Array.from(seen.values()),
+    issueReferences,
+    revertedIssueReferences,
     prNumbers: Array.from(prNumbersSet),
     debugSink,
   };
