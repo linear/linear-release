@@ -137,6 +137,7 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): s
   // GitHub auto-generates branch names like "revert-571-romain/bac-39" for revert PRs.
   // Block extraction to prevent the original issue identifier from being added to the release.
   if (/(^|\/)revert-\d+-/i.test(commit.branchName ?? "")) {
+    log(`Skipping revert branch ${commit.branchName} for commit ${commit.sha}`);
     return [];
   }
 
