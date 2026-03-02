@@ -87,15 +87,13 @@ if (jsonOutput) {
 }
 
 const logEnvironmentSummary = () => {
-  verbose("Using access key authentication");
-
   if (releaseName) {
     if (command === "sync") {
-      verbose(`Using custom release name: ${releaseName}`);
+      info(`Using custom release name: ${releaseName}`);
     }
   }
   if (releaseVersion) {
-    verbose(`Using custom release version: ${releaseVersion}`);
+    info(`Using custom release version: ${releaseVersion}`);
   }
   for (const w of cliWarnings) {
     warn(`Warning: ${w}`);
@@ -161,7 +159,7 @@ async function syncCommand(): Promise<{
   let inspectingOnlyCurrentCommit = false;
 
   if (!commitExists(latestSha)) {
-    verbose(
+    warn(
       `Could not find sha ${latestSha} in the git history (it may be on a different branch or the repository history was not fully fetched)`,
     );
     inspectingOnlyCurrentCommit = true;

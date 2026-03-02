@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import type { CommitContext, GitInfo, RepoInfo } from "./types";
-import { debug, error as logError, verbose } from "./log";
+import { debug, error as logError, verbose, warn } from "./log";
 
 /** Strips leading "./" or "/" so paths are clean for git pathspec. */
 export function normalizePathspec(pattern: string): string {
@@ -102,7 +102,7 @@ export function commitExists(sha: string, cwd: string = process.cwd()): boolean 
     // Only log unexpected errors, not "commit not found" which is expected
     const message = error instanceof Error ? error.message : String(error);
     if (!message.includes("Not a valid object")) {
-      debug(`commitExists: Unexpected error checking ${sha}: ${message}`);
+      warn(`commitExists: Unexpected error checking ${sha}: ${message}`);
     }
     return false;
   }
@@ -115,7 +115,7 @@ const SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
  */
 export function isMergeCommit(sha: string, cwd: string = process.cwd()): boolean {
   if (!SHA_PATTERN.test(sha)) {
-    debug(`isMergeCommit: Invalid SHA format "${sha}"`);
+    warn(`isMergeCommit: Invalid SHA format "${sha}"`);
     return false;
   }
 
@@ -131,7 +131,7 @@ export function isMergeCommit(sha: string, cwd: string = process.cwd()): boolean
     return parentHashes.includes(" ");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    debug(`isMergeCommit: Failed to check ${sha}: ${message}`);
+    warn(`isMergeCommit: Failed to check ${sha}: ${message}`);
     return false;
   }
 }
@@ -165,7 +165,7 @@ function parseCommitChunk(chunk: string): CommitContext {
  */
 export function getCommitContext(sha: string, cwd: string = process.cwd()): CommitContext | null {
   if (!SHA_PATTERN.test(sha)) {
-    debug(`getCommitContext: Invalid SHA format "${sha}"`);
+    warn(`getCommitContext: Invalid SHA format "${sha}"`);
     return null;
   }
 
@@ -178,14 +178,14 @@ export function getCommitContext(sha: string, cwd: string = process.cwd()): Comm
 
     const chunk = output.split("\x1e")[0];
     if (!chunk || chunk.trim().length === 0) {
-      debug(`getCommitContext: Empty output for ${sha}`);
+      warn(`getCommitContext: Empty output for ${sha}`);
       return null;
     }
 
     return parseCommitChunk(chunk);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    debug(`getCommitContext: Failed to get context for ${sha}: ${message}`);
+    warn(`getCommitContext: Failed to get context for ${sha}: ${message}`);
     return null;
   }
 }
@@ -250,11 +250,11 @@ export function getCommitContextsBetweenShas(
   const { includePaths = null, cwd = process.cwd() } = options;
 
   if (!SHA_PATTERN.test(fromSha)) {
-    debug(`getCommitContextsBetweenShas: Invalid fromSha format "${fromSha}"`);
+    warn(`getCommitContextsBetweenShas: Invalid fromSha format "${fromSha}"`);
     return [];
   }
   if (!SHA_PATTERN.test(toSha)) {
-    debug(`getCommitContextsBetweenShas: Invalid toSha format "${toSha}"`);
+    warn(`getCommitContextsBetweenShas: Invalid toSha format "${toSha}"`);
     return [];
   }
 
