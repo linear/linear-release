@@ -3,7 +3,7 @@ import {
   extractPullRequestNumbersForCommit,
   extractRevertedIssueIdentifiersForCommit,
 } from "./extractors";
-import { debug } from "./log";
+import { verbose } from "./log";
 import { CommitContext, DebugSink, IssueReference, PullRequestSource } from "./types";
 
 /**
@@ -48,7 +48,7 @@ export function scanCommits(
 
       lastAction.set(identifier, "reverted");
       revertedRefs.set(identifier, { identifier, commitSha: commit.sha });
-      debug(`Detected reverted issue key ${identifier} from commit ${commit.sha}`);
+      verbose(`Detected reverted issue key ${identifier} from commit ${commit.sha}`);
     }
 
     for (const { identifier, source } of extractLinearIssueIdentifiersForCommit(commit)) {
@@ -63,7 +63,7 @@ export function scanCommits(
 
       lastAction.set(identifier, "added");
       addedRefs.set(identifier, { identifier, commitSha: commit.sha });
-      debug(
+      verbose(
         `Detected issue key ${identifier} from ${source === "branch_name" ? `branch "${commit.branchName}"` : `message "${commit.message}"`}`,
       );
     }
@@ -77,7 +77,7 @@ export function scanCommits(
           value: commit.message ?? "",
         };
         debugSink.pullRequests.push(prSource);
-        debug(`Found pull request number ${prNumber} in commit ${commit.sha}`);
+        verbose(`Found pull request number ${prNumber} in commit ${commit.sha}`);
       }
     }
   }

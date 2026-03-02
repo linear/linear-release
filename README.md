@@ -151,8 +151,7 @@ linear-release update --stage="in review" --release-version="1.2.0"
 | `--include-paths`   | `sync`                       | Filter commits by changed file paths                                                                                                                                                                                                 |
 | `--json`            | `sync`, `complete`, `update` | Output result as JSON                                                                                                                                                                                                                |
 | `--quiet`           | `sync`, `complete`, `update` | Only print errors                                                                                                                                                                                                                    |
-| `--verbose`         | `sync`, `complete`, `update` | Print detailed progress                                                                                                                                                                                                              |
-| `--debug`           | `sync`, `complete`, `update` | Print everything including debug diagnostics                                                                                                                                                                                         |
+| `--verbose`         | `sync`, `complete`, `update` | Print detailed progress including debug diagnostics                                                                                                                                                                                  |
 
 ### Command Targeting
 
@@ -179,12 +178,11 @@ When no release is created (e.g. no commits found), `--json` outputs `{"release"
 
 By default, the CLI prints key results like the number of commits scanned and issues linked. Use log level flags to control verbosity:
 
-| Flag        | Output                                            |
-| ----------- | ------------------------------------------------- |
-| `--quiet`   | Errors only — ideal for silent CI jobs            |
-| _(default)_ | Key results (issues found, release created, etc)  |
-| `--verbose` | Detailed progress (config, shallow-clone fetches) |
-| `--debug`   | Everything, including the full debug diagnostics  |
+| Flag        | Output                                                               |
+| ----------- | -------------------------------------------------------------------- |
+| `--quiet`   | Errors only — ideal for silent CI jobs                               |
+| _(default)_ | Key results (issues found, release created, etc)                     |
+| `--verbose` | Detailed progress (config, shallow-clone fetches, debug diagnostics) |
 
 Only one log level flag can be used at a time.
 

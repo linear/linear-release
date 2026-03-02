@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import type { CommitContext, GitInfo, RepoInfo } from "./types";
-import { debug, error as logError, verbose, warn } from "./log";
+import { error as logError, verbose, warn } from "./log";
 
 /** Strips leading "./" or "/" so paths are clean for git pathspec. */
 export function normalizePathspec(pattern: string): string {
@@ -294,7 +294,7 @@ export function getCommitContextsBetweenShas(
   }
 
   if (commits.length === 0) {
-    debug(
+    verbose(
       `getCommitContextsBetweenShas: No commits found between ${fromSha}..${toSha}` +
         (includePaths?.length ? ` with paths: ${includePaths.join(", ")}` : ""),
     );
@@ -378,7 +378,7 @@ export function getPullRequestNumbers(commits: CommitContext[]): number[] {
     for (const match of matches) {
       const prNumber = Number.parseInt(match[1]!, 10);
       if (!Number.isNaN(prNumber)) {
-        debug(`Found pull request number ${prNumber} in commit ${commit.sha}`);
+        verbose(`Found pull request number ${prNumber} in commit ${commit.sha}`);
         prNumbers.add(prNumber);
       }
     }

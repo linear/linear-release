@@ -2,7 +2,6 @@ export enum LogLevel {
   Quiet = 0,
   Default = 1,
   Verbose = 2,
-  Debug = 3,
 }
 
 let currentLevel: LogLevel = LogLevel.Default;
@@ -48,9 +47,4 @@ export function info(message: string) {
 /** Printed at Verbose level and above. */
 export function verbose(message: string) {
   if (currentLevel >= LogLevel.Verbose) write(message);
-}
-
-/** Printed at Debug level only. */
-export function debug(message: string) {
-  if (currentLevel >= LogLevel.Debug) write(message);
 }

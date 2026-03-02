@@ -142,20 +142,7 @@ describe("parseCLIArgs", () => {
     expect(result.logLevel).toBe(LogLevel.Verbose);
   });
 
-  it("parses --debug to LogLevel.Debug", () => {
-    const result = parseCLIArgs(["--debug"]);
-    expect(result.logLevel).toBe(LogLevel.Debug);
-  });
-
   it("throws when --quiet and --verbose are both passed", () => {
     expect(() => parseCLIArgs(["--quiet", "--verbose"])).toThrow("Conflicting log level flags");
-  });
-
-  it("throws when --quiet and --debug are both passed", () => {
-    expect(() => parseCLIArgs(["--quiet", "--debug"])).toThrow("Conflicting log level flags");
-  });
-
-  it("throws when --verbose and --debug are both passed", () => {
-    expect(() => parseCLIArgs(["--verbose", "--debug"])).toThrow("Conflicting log level flags");
   });
 });

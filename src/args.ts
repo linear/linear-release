@@ -24,7 +24,6 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
       timeout: { type: "string" },
       quiet: { type: "boolean", default: false },
       verbose: { type: "boolean", default: false },
-      debug: { type: "boolean", default: false },
     },
     allowPositionals: true,
     strict: true,
@@ -40,15 +39,13 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
     timeoutSeconds = parsed;
   }
 
-  const levelFlags = [values.quiet && "quiet", values.verbose && "verbose", values.debug && "debug"].filter(Boolean);
-  if (levelFlags.length > 1) {
-    throw new Error(`Conflicting log level flags: --${levelFlags.join(", --")}. Use only one.`);
+  if (values.quiet && values.verbose) {
+    throw new Error("Conflicting log level flags: --quiet, --verbose. Use only one.");
   }
 
   let logLevel = LogLevel.Default;
   if (values.quiet) logLevel = LogLevel.Quiet;
   else if (values.verbose) logLevel = LogLevel.Verbose;
-  else if (values.debug) logLevel = LogLevel.Debug;
 
   return {
     command: positionals[0] || "sync",

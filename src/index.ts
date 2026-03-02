@@ -13,7 +13,7 @@ import {
   RepoInfo,
 } from "./types";
 import { getCLIWarnings, parseCLIArgs } from "./args";
-import { debug, error, info, setLogLevel, setStderr, verbose, warn } from "./log";
+import { error, info, setLogLevel, setStderr, verbose, warn } from "./log";
 import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
 import { withRetry } from "./retry";
@@ -45,8 +45,7 @@ Options:
   --timeout=<seconds>        Abort if the operation exceeds this duration (default: 60)
   --json                     Output result as JSON
   --quiet                    Only print errors
-  --verbose                  Print detailed progress
-  --debug                    Print everything including the debug sink
+  --verbose                  Print detailed progress including debug diagnostics
   -v, --version              Show version number
   -h, --help                 Show this help message
 
@@ -202,7 +201,7 @@ async function syncCommand(): Promise<{
     effectiveIncludePaths,
   );
 
-  debug(`Debug sink: ${JSON.stringify(debugSink, null, 2)}`);
+  verbose(`Debug sink: ${JSON.stringify(debugSink, null, 2)}`);
 
   if (issueReferences.length === 0) {
     info("No issue keys found");
