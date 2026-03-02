@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import type { CommitContext, GitInfo, RepoInfo } from "./types";
-import { log } from "./log";
+import { debug, error as logError, verbose } from "./log";
 
 /** Strips leading "./" or "/" so paths are clean for git pathspec. */
 export function normalizePathspec(pattern: string): string {
@@ -102,7 +102,7 @@ export function commitExists(sha: string, cwd: string = process.cwd()): boolean 
     // Only log unexpected errors, not "commit not found" which is expected
     const message = error instanceof Error ? error.message : String(error);
     if (!message.includes("Not a valid object")) {
-      log(`commitExists: Unexpected error checking ${sha}: ${message}`);
+      debug(`commitExists: Unexpected error checking ${sha}: ${message}`);
     }
     return false;
   }
@@ -115,7 +115,7 @@ const SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
  */
 export function isMergeCommit(sha: string, cwd: string = process.cwd()): boolean {
   if (!SHA_PATTERN.test(sha)) {
-    log(`isMergeCommit: Invalid SHA format "${sha}"`);
+    debug(`isMergeCommit: Invalid SHA format "${sha}"`);
     return false;
   }
 
@@ -131,7 +131,7 @@ export function isMergeCommit(sha: string, cwd: string = process.cwd()): boolean
     return parentHashes.includes(" ");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    log(`isMergeCommit: Failed to check ${sha}: ${message}`);
+    debug(`isMergeCommit: Failed to check ${sha}: ${message}`);
     return false;
   }
 }
@@ -165,7 +165,7 @@ function parseCommitChunk(chunk: string): CommitContext {
  */
 export function getCommitContext(sha: string, cwd: string = process.cwd()): CommitContext | null {
   if (!SHA_PATTERN.test(sha)) {
-    log(`getCommitContext: Invalid SHA format "${sha}"`);
+    debug(`getCommitContext: Invalid SHA format "${sha}"`);
     return null;
   }
 
@@ -178,14 +178,14 @@ export function getCommitContext(sha: string, cwd: string = process.cwd()): Comm
 
     const chunk = output.split("\x1e")[0];
     if (!chunk || chunk.trim().length === 0) {
-      log(`getCommitContext: Empty output for ${sha}`);
+      debug(`getCommitContext: Empty output for ${sha}`);
       return null;
     }
 
     return parseCommitChunk(chunk);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    log(`getCommitContext: Failed to get context for ${sha}: ${message}`);
+    debug(`getCommitContext: Failed to get context for ${sha}: ${message}`);
     return null;
   }
 }
@@ -212,14 +212,14 @@ function ensureCommitAvailable(sha: string, cwd: string): void {
     { command: "git fetch --unshallow origin", label: "Fetching full history" },
   ];
 
-  log(`Commit ${sha} not in local history (likely shallow clone)`);
+  verbose(`Commit ${sha} not in local history (likely shallow clone)`);
 
   for (const { command, label } of strategies) {
-    log(label);
+    verbose(label);
     try {
       execSync(command, { cwd, stdio: "pipe" });
       if (commitExists(sha, cwd)) {
-        log(`Found commit ${sha}`);
+        verbose(`Found commit ${sha}`);
         return;
       }
     } catch {
@@ -250,11 +250,11 @@ export function getCommitContextsBetweenShas(
   const { includePaths = null, cwd = process.cwd() } = options;
 
   if (!SHA_PATTERN.test(fromSha)) {
-    log(`getCommitContextsBetweenShas: Invalid fromSha format "${fromSha}"`);
+    debug(`getCommitContextsBetweenShas: Invalid fromSha format "${fromSha}"`);
     return [];
   }
   if (!SHA_PATTERN.test(toSha)) {
-    log(`getCommitContextsBetweenShas: Invalid toSha format "${toSha}"`);
+    debug(`getCommitContextsBetweenShas: Invalid toSha format "${toSha}"`);
     return [];
   }
 
@@ -294,7 +294,7 @@ export function getCommitContextsBetweenShas(
   }
 
   if (commits.length === 0) {
-    log(
+    debug(
       `getCommitContextsBetweenShas: No commits found between ${fromSha}..${toSha}` +
         (includePaths?.length ? ` with paths: ${includePaths.join(", ")}` : ""),
     );
@@ -361,7 +361,7 @@ export function getRepoInfo(remote: string = "origin", cwd: string = process.cwd
 
     return parseRepoUrl(url);
   } catch (error) {
-    console.error(`Error getting repo info: ${error}`);
+    logError(`Error getting repo info: ${error}`);
     return null;
   }
 }
@@ -378,7 +378,7 @@ export function getPullRequestNumbers(commits: CommitContext[]): number[] {
     for (const match of matches) {
       const prNumber = Number.parseInt(match[1]!, 10);
       if (!Number.isNaN(prNumber)) {
-        log(`Found pull request number ${prNumber} in commit ${commit.sha}`);
+        debug(`Found pull request number ${prNumber} in commit ${commit.sha}`);
         prNumbers.add(prNumber);
       }
     }

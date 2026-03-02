@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getCLIWarnings, parseCLIArgs } from "./args";
+import { LogLevel } from "./log";
 
 describe("parseCLIArgs", () => {
   it("defaults command to sync when no positional given", () => {
@@ -124,5 +125,37 @@ describe("parseCLIArgs", () => {
 
   it("throws on negative --timeout", () => {
     expect(() => parseCLIArgs(["--timeout=-5"])).toThrow('Invalid --timeout value: "-5"');
+  });
+
+  it("defaults logLevel to Default", () => {
+    const result = parseCLIArgs([]);
+    expect(result.logLevel).toBe(LogLevel.Default);
+  });
+
+  it("parses --quiet to LogLevel.Quiet", () => {
+    const result = parseCLIArgs(["--quiet"]);
+    expect(result.logLevel).toBe(LogLevel.Quiet);
+  });
+
+  it("parses --verbose to LogLevel.Verbose", () => {
+    const result = parseCLIArgs(["--verbose"]);
+    expect(result.logLevel).toBe(LogLevel.Verbose);
+  });
+
+  it("parses --debug to LogLevel.Debug", () => {
+    const result = parseCLIArgs(["--debug"]);
+    expect(result.logLevel).toBe(LogLevel.Debug);
+  });
+
+  it("throws when --quiet and --verbose are both passed", () => {
+    expect(() => parseCLIArgs(["--quiet", "--verbose"])).toThrow("Conflicting log level flags");
+  });
+
+  it("throws when --quiet and --debug are both passed", () => {
+    expect(() => parseCLIArgs(["--quiet", "--debug"])).toThrow("Conflicting log level flags");
+  });
+
+  it("throws when --verbose and --debug are both passed", () => {
+    expect(() => parseCLIArgs(["--verbose", "--debug"])).toThrow("Conflicting log level flags");
   });
 });

@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import { LogLevel } from "./log";
 
 export type ParsedCLIArgs = {
   command: string;
@@ -8,6 +9,7 @@ export type ParsedCLIArgs = {
   includePaths: string[];
   jsonOutput: boolean;
   timeoutSeconds: number;
+  logLevel: LogLevel;
 };
 
 export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
@@ -20,6 +22,9 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
       "include-paths": { type: "string" },
       json: { type: "boolean", default: false },
       timeout: { type: "string" },
+      quiet: { type: "boolean", default: false },
+      verbose: { type: "boolean", default: false },
+      debug: { type: "boolean", default: false },
     },
     allowPositionals: true,
     strict: true,
@@ -35,6 +40,16 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
     timeoutSeconds = parsed;
   }
 
+  const levelFlags = [values.quiet && "quiet", values.verbose && "verbose", values.debug && "debug"].filter(Boolean);
+  if (levelFlags.length > 1) {
+    throw new Error(`Conflicting log level flags: --${levelFlags.join(", --")}. Use only one.`);
+  }
+
+  let logLevel = LogLevel.Default;
+  if (values.quiet) logLevel = LogLevel.Quiet;
+  else if (values.verbose) logLevel = LogLevel.Verbose;
+  else if (values.debug) logLevel = LogLevel.Debug;
+
   return {
     command: positionals[0] || "sync",
     releaseName: values.name,
@@ -48,6 +63,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
       : [],
     jsonOutput: values.json ?? false,
     timeoutSeconds,
+    logLevel,
   };
 }
 

@@ -1,5 +1,5 @@
 import { LinearError, LinearErrorType, RatelimitedLinearError } from "@linear/sdk";
-import { log } from "./log";
+import { warn } from "./log";
 
 const MAX_ATTEMPTS = 3;
 const BASE_DELAY_MS = 1000;
@@ -47,7 +47,7 @@ export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
         throw error;
       }
       const delay = getDelayMs(error, attempt);
-      log(`Request failed, retrying (attempt ${attempt + 1}/${MAX_ATTEMPTS})...`);
+      warn(`Request failed, retrying (attempt ${attempt + 1}/${MAX_ATTEMPTS})...`);
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }

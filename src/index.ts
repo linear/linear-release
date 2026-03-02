@@ -13,7 +13,7 @@ import {
   RepoInfo,
 } from "./types";
 import { getCLIWarnings, parseCLIArgs } from "./args";
-import { log, setStderr } from "./log";
+import { debug, error, info, setLogLevel, setStderr, verbose, warn } from "./log";
 import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
 import { withRetry } from "./retry";
@@ -44,6 +44,9 @@ Options:
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
   --timeout=<seconds>        Abort if the operation exceeds this duration (default: 60)
   --json                     Output result as JSON
+  --quiet                    Only print errors
+  --verbose                  Print detailed progress
+  --debug                    Print everything including the debug sink
   -v, --version              Show version number
   -h, --help                 Show this help message
 
@@ -75,28 +78,30 @@ try {
   console.error("Run linear-release --help for usage information.");
   process.exit(1);
 }
-const { command, releaseName, releaseVersion, stageName, includePaths, jsonOutput, timeoutSeconds } = parsedArgs;
+const { command, releaseName, releaseVersion, stageName, includePaths, jsonOutput, timeoutSeconds, logLevel } =
+  parsedArgs;
 const cliWarnings = getCLIWarnings(parsedArgs);
+setLogLevel(logLevel);
 if (jsonOutput) {
   setStderr(true);
 }
 
 const logEnvironmentSummary = () => {
-  log("Using access key authentication");
+  verbose("Using access key authentication");
 
   if (releaseName) {
     if (command === "sync") {
-      log(`Using custom release name: ${releaseName}`);
+      verbose(`Using custom release name: ${releaseName}`);
     }
   }
   if (releaseVersion) {
-    log(`Using custom release version: ${releaseVersion}`);
+    verbose(`Using custom release version: ${releaseVersion}`);
   }
-  for (const warning of cliWarnings) {
-    log(`Warning: ${warning}`);
+  for (const w of cliWarnings) {
+    warn(`Warning: ${w}`);
   }
 
-  log(`Running in ${process.env.NODE_ENV === "development" ? "development" : "production"} mode`);
+  verbose(`Running in ${process.env.NODE_ENV === "development" ? "development" : "production"} mode`);
 };
 
 const getDevApiUrl = () => {
@@ -131,9 +136,9 @@ async function syncCommand(): Promise<{
   let effectiveIncludePaths: string[] | null;
   if (includePaths && includePaths.length > 0) {
     effectiveIncludePaths = includePaths;
-    log(`Using CLI --include-paths: ${JSON.stringify(effectiveIncludePaths)}`);
+    verbose(`Using CLI --include-paths: ${JSON.stringify(effectiveIncludePaths)}`);
     if (pipelineSettings.includePathPatterns.length > 0) {
-      log(
+      verbose(
         `Note: Pipeline has includePathPatterns configured ${JSON.stringify(
           pipelineSettings.includePathPatterns,
         )}, but CLI --include-paths takes precedence`,
@@ -141,7 +146,7 @@ async function syncCommand(): Promise<{
     }
   } else if (pipelineSettings.includePathPatterns.length > 0) {
     effectiveIncludePaths = pipelineSettings.includePathPatterns;
-    log(`Using pipeline includePathPatterns: ${JSON.stringify(effectiveIncludePaths)}`);
+    verbose(`Using pipeline includePathPatterns: ${JSON.stringify(effectiveIncludePaths)}`);
   } else {
     effectiveIncludePaths = null;
   }
@@ -156,7 +161,7 @@ async function syncCommand(): Promise<{
   let inspectingOnlyCurrentCommit = false;
 
   if (!commitExists(latestSha)) {
-    log(
+    verbose(
       `Could not find sha ${latestSha} in the git history (it may be on a different branch or the repository history was not fully fetched)`,
     );
     inspectingOnlyCurrentCommit = true;
@@ -170,15 +175,15 @@ async function syncCommand(): Promise<{
   if (inspectingOnlyCurrentCommit) {
     if (commits.length === 0) {
       if (effectiveIncludePaths?.length) {
-        log(`Current commit (${currentCommit.commit}) does not match the path filter`);
+        verbose(`Current commit (${currentCommit.commit}) does not match the path filter`);
       } else {
-        log(`Current commit (${currentCommit.commit}) could not be inspected`);
+        verbose(`Current commit (${currentCommit.commit}) could not be inspected`);
       }
     } else {
-      log(`Inspecting current commit (${currentCommit.commit})`);
+      verbose(`Inspecting current commit (${currentCommit.commit})`);
     }
   } else {
-    log(
+    info(
       `Found ${commits.length} ${pluralize(commits.length, "commit")} between ${latestSha} and ${currentCommit.commit}`,
     );
   }
@@ -187,7 +192,7 @@ async function syncCommand(): Promise<{
     const reason = effectiveIncludePaths?.length
       ? `matching ${JSON.stringify(effectiveIncludePaths)}`
       : "in the computed range";
-    log(`No commits found ${reason}. Skipping release creation.`);
+    info(`No commits found ${reason}. Skipping release creation.`);
     return null;
   }
 
@@ -199,28 +204,28 @@ async function syncCommand(): Promise<{
     effectiveIncludePaths,
   );
 
-  log(`Debug sink: ${JSON.stringify(debugSink, null, 2)}`);
+  debug(`Debug sink: ${JSON.stringify(debugSink, null, 2)}`);
 
   if (issueReferences.length === 0) {
-    log("No issue keys found");
+    info("No issue keys found");
   } else {
-    log(`Retrieved issue keys: ${issueReferences.map((f) => f.identifier).join(", ")}`);
+    info(`Retrieved issue keys: ${issueReferences.map((f) => f.identifier).join(", ")}`);
   }
 
   if (revertedIssueReferences.length > 0) {
-    log(`Reverted issue keys: ${revertedIssueReferences.map((f) => f.identifier).join(", ")}`);
+    info(`Reverted issue keys: ${revertedIssueReferences.map((f) => f.identifier).join(", ")}`);
   }
 
   const repoInfo = getRepoInfo();
 
   const release = await syncRelease(issueReferences, revertedIssueReferences, prNumbers, repoInfo, debugSink);
-  log(
+  info(
     `Issues [${issueReferences.map((f) => f.identifier).join(", ")}] and pull requests [${prNumbers.join(
       ", ",
     )}] have been added to release ${release.name}`,
   );
 
-  log("Finished");
+  info("Finished");
 
   return { release: { id: release.id, name: release.name, version: release.version, url: release.url } };
 }
@@ -238,12 +243,12 @@ async function completeCommand(): Promise<{
     commitSha,
   });
   if (result.success) {
-    log(`Completed release ${result.release?.name ?? "(unknown)"}`);
+    info(`Completed release ${result.release?.name ?? "(unknown)"}`);
   } else {
     throw new Error("Failed to complete release");
   }
 
-  log("Finished");
+  info("Finished");
 
   return result.release
     ? {
@@ -278,12 +283,12 @@ async function updateCommand(): Promise<{
   }
 
   if (result.success) {
-    log(`Updated release "${result.release?.name}" to stage "${result.release?.stageName}"`);
+    info(`Updated release "${result.release?.name}" to stage "${result.release?.stageName}"`);
   } else {
     throw new Error("Failed to update release");
   }
 
-  log("Finished");
+  info("Finished");
 
   return result.release
     ? {
@@ -323,9 +328,9 @@ async function getLatestSha(): Promise<string> {
 
   // If we can't find a release or the latest release has no commit SHA, we will only inspect the current commit
   if (!latestRelease) {
-    log("Could not find latest release, assuming it's the first release, will only inspect the current commit");
+    verbose("Could not find latest release, assuming it's the first release, will only inspect the current commit");
   } else if (!latestRelease.commitSha) {
-    log("Latest release has no commit SHA, will only inspect the current commit");
+    verbose("Latest release has no commit SHA, will only inspect the current commit");
   }
   const currentSha = await getCurrentGitInfo().commit;
   if (!currentSha) {
@@ -507,8 +512,8 @@ async function main() {
       result = await updateCommand();
       break;
     default:
-      console.error(`Unknown command: ${command}`);
-      console.error("Available commands: sync, complete, update");
+      error(`Unknown command: ${command}`);
+      error("Available commands: sync, complete, update");
       process.exit(1);
   }
 
@@ -519,7 +524,7 @@ async function main() {
 
 const timeoutMs = timeoutSeconds * 1000;
 const timeout = setTimeout(() => {
-  console.error(
+  error(
     `Error: Operation timed out after ${timeoutSeconds}s. This may indicate a large repository or slow network. Use --timeout=<seconds> to increase the limit.`,
   );
   process.exit(1);
@@ -527,8 +532,8 @@ const timeout = setTimeout(() => {
 timeout.unref();
 
 main()
-  .catch((error) => {
-    console.error(`Error: ${error.message}`);
+  .catch((e) => {
+    error(`Error: ${e.message}`);
     process.exit(1);
   })
   .finally(() => {
