@@ -281,20 +281,20 @@ export function extractRevertedIssueIdentifiersForCommit(commit: CommitContext):
 
   const found = new Map<string, ExtractedIdentifier>();
 
+  if (branchDepth % 2 === 1) {
+    for (const match of matchAllIdentifiers(originalBranch)) {
+      if (!found.has(match.identifier)) {
+        found.set(match.identifier, { identifier: match.identifier, source: "branch_name" });
+      }
+    }
+  }
+
   // Use magic-word gating on the inner message, same as the add path, to avoid
   // false positives from generic word-number tokens (e.g. "Bump v1-2 to v1-3").
   if (messageDepth % 2 === 1) {
     for (const match of matchMagicWordIdentifiers(innerMessage)) {
       if (!found.has(match.identifier)) {
         found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
-      }
-    }
-  }
-
-  if (branchDepth % 2 === 1) {
-    for (const match of matchAllIdentifiers(originalBranch)) {
-      if (!found.has(match.identifier)) {
-        found.set(match.identifier, { identifier: match.identifier, source: "branch_name" });
       }
     }
   }

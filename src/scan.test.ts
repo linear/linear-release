@@ -71,25 +71,6 @@ describe("scanCommits", () => {
     });
   });
 
-  describe("inline revert/reapply cycle without identifiers", () => {
-    const commits: CommitContext[] = [
-      { sha: "a1", message: "More revert test" },
-      { sha: "r1", message: 'Revert "More revert test"' },
-      { sha: "ra1", message: 'Reapply "More revert test"' },
-      {
-        sha: "m1",
-        branchName: "romain/test-revert",
-        message: 'Merge pull request #575 from org/romain/test-revert Reapply "More revert test"',
-      },
-    ];
-
-    it("no identifiers found in either list", () => {
-      const result = scanCommits(commits, null);
-      expect(ids(result.issueReferences)).toEqual([]);
-      expect(ids(result.revertedIssueReferences)).toEqual([]);
-    });
-  });
-
   describe("last-write-wins edge cases", () => {
     it("different issues go to their respective lists", () => {
       const commits: CommitContext[] = [

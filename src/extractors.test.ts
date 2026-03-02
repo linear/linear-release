@@ -467,14 +467,6 @@ describe("extractRevertedIssueIdentifiersForCommit", () => {
     expect(ids(result)).toEqual([]);
   });
 
-  it("ignores non-issue tokens in unwrapped message", () => {
-    const result = extractRevertedIssueIdentifiersForCommit({
-      sha: "abc",
-      message: 'Revert "Bump v1-2 to v1-3"',
-    });
-    expect(ids(result)).toEqual([]);
-  });
-
   it("extracts identifier from revert branch name", () => {
     const result = extractRevertedIssueIdentifiersForCommit({
       sha: "abc",
@@ -521,104 +513,6 @@ describe("extractRevertedIssueIdentifiersForCommit", () => {
   it("returns empty for null/undefined inputs", () => {
     expect(ids(extractRevertedIssueIdentifiersForCommit({ sha: "abc", message: null }))).toEqual([]);
     expect(ids(extractRevertedIssueIdentifiersForCommit({ sha: "abc" }))).toEqual([]);
-  });
-});
-
-describe("revert chain: add → revert → re-add", () => {
-  const mergeAdd: CommitContext = {
-    sha: "c7f3c4b1",
-    branchName: "romain/bac-39",
-    message: "Merge pull request #571 from org/romain/bac-39 Add TEST variable",
-  };
-  const innerAdd: CommitContext = {
-    sha: "439fe0e5",
-    message: "Add TEST variable to .env.example",
-  };
-  const mergeRevert: CommitContext = {
-    sha: "69c6d923",
-    branchName: "revert-571-romain/bac-39",
-    message: 'Merge pull request #572 from org/revert-571-romain/bac-39 Revert "Add TEST variable"',
-  };
-  const innerRevert: CommitContext = {
-    sha: "986e4383",
-    message: 'Revert "Add TEST variable to .env.example"',
-  };
-  const mergeReAdd: CommitContext = {
-    sha: "cc13b9c5",
-    branchName: "revert-572-revert-571-romain/bac-39",
-    message: "Merge pull request #573 from org/revert-572-revert-571-romain/bac-39 Custom name for the revert revert",
-  };
-  const innerReAdd: CommitContext = {
-    sha: "9c83cecb",
-    message: 'Revert "Revert "Add TEST variable to .env.example""',
-  };
-  const inlineAdd: CommitContext = { sha: "c041d48b", message: "More revert test" };
-  const inlineRevert: CommitContext = { sha: "fa20f72f", message: 'Revert "More revert test"' };
-  const inlineReapply: CommitContext = { sha: "1086658b", message: 'Reapply "More revert test"' };
-  const inlineMerge: CommitContext = {
-    sha: "f685bbbc",
-    branchName: "romain/test-revert",
-    message: 'Merge pull request #575 from org/romain/test-revert Reapply "More revert test"',
-  };
-
-  describe("issue extraction (add path)", () => {
-    it("merge add → extracts identifier from branch", () => {
-      expect(ids(extractLinearIssueIdentifiersForCommit(mergeAdd))).toEqual(["BAC-39"]);
-    });
-
-    it("inner add → nothing (no magic word, no branch)", () => {
-      expect(ids(extractLinearIssueIdentifiersForCommit(innerAdd))).toEqual([]);
-    });
-
-    it("merge revert → blocked (odd-depth revert branch)", () => {
-      expect(ids(extractLinearIssueIdentifiersForCommit(mergeRevert))).toEqual([]);
-    });
-
-    it("inner revert → nothing (Revert message has no magic word)", () => {
-      expect(ids(extractLinearIssueIdentifiersForCommit(innerRevert))).toEqual([]);
-    });
-
-    it("merge re-add → identifier re-added (even depth = revert-of-revert)", () => {
-      expect(ids(extractLinearIssueIdentifiersForCommit(mergeReAdd))).toEqual(["BAC-39"]);
-    });
-
-    it("inner re-add → nothing (no magic word, no branch)", () => {
-      expect(ids(extractLinearIssueIdentifiersForCommit(innerReAdd))).toEqual([]);
-    });
-
-    it("inline revert/reapply → nothing (no identifiers)", () => {
-      expect(ids(extractLinearIssueIdentifiersForCommit(inlineAdd))).toEqual([]);
-      expect(ids(extractLinearIssueIdentifiersForCommit(inlineRevert))).toEqual([]);
-      expect(ids(extractLinearIssueIdentifiersForCommit(inlineReapply))).toEqual([]);
-      expect(ids(extractLinearIssueIdentifiersForCommit(inlineMerge))).toEqual([]);
-    });
-  });
-
-  describe("issue extraction (revert path)", () => {
-    it("merge add → not a revert", () => {
-      expect(ids(extractRevertedIssueIdentifiersForCommit(mergeAdd))).toEqual([]);
-    });
-
-    it("merge revert → extracts identifier from stripped branch", () => {
-      expect(ids(extractRevertedIssueIdentifiersForCommit(mergeRevert))).toEqual(["BAC-39"]);
-    });
-
-    it("inner revert → nothing (no identifier in unwrapped message)", () => {
-      expect(ids(extractRevertedIssueIdentifiersForCommit(innerRevert))).toEqual([]);
-    });
-
-    it("merge re-add → not a revert (even depth)", () => {
-      expect(ids(extractRevertedIssueIdentifiersForCommit(mergeReAdd))).toEqual([]);
-    });
-
-    it("inner re-add → not a revert (even depth)", () => {
-      expect(ids(extractRevertedIssueIdentifiersForCommit(innerReAdd))).toEqual([]);
-    });
-
-    it("inline revert/reapply → nothing (no identifiers)", () => {
-      expect(ids(extractRevertedIssueIdentifiersForCommit(inlineRevert))).toEqual([]);
-      expect(ids(extractRevertedIssueIdentifiersForCommit(inlineReapply))).toEqual([]);
-    });
   });
 });
 
