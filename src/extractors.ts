@@ -1,4 +1,4 @@
-import { log } from "./log";
+import { verbose } from "./log";
 import { CommitContext } from "./types";
 
 const MAX_KEY_LENGTH = 7;
@@ -143,12 +143,12 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): E
   // count its identifiers as "added". Even depth = revert-of-revert (re-add).
   const { depth: branchDepth, inner: strippedBranch } = parseRevertBranch(commit.branchName ?? "");
   if (branchDepth % 2 === 1) {
-    log(`Skipping revert branch "${commit.branchName}" (depth ${branchDepth}) for commit ${commit.sha}`);
+    verbose(`Skipping revert branch "${commit.branchName}" (depth ${branchDepth}) for commit ${commit.sha}`);
     return [];
   }
   const { depth: messageDepth } = parseRevertMessage(commit.message ?? "");
   if (messageDepth % 2 === 1) {
-    log(`Skipping revert message (depth ${messageDepth}) for commit ${commit.sha}`);
+    verbose(`Skipping revert message (depth ${messageDepth}) for commit ${commit.sha}`);
     return [];
   }
 
@@ -184,14 +184,14 @@ export function extractPullRequestNumbersForCommit(commit: CommitContext): numbe
 
   // Skip reverts - they reference the original PR, not a new one
   if (/^Revert "/i.test(message)) {
-    log(`Skipping revert commit ${commit.sha} with message: "${message}"`);
+    verbose(`Skipping revert commit ${commit.sha} with message: "${message}"`);
     return [];
   }
 
   // Revert merge commits reference the original PR number, not a new one.
   // Even depth (revert-of-revert) falls through to normal extraction.
   if (getRevertBranchDepth(commit.branchName) % 2 === 1) {
-    log(`Skipping revert merge commit ${commit.sha}`);
+    verbose(`Skipping revert merge commit ${commit.sha}`);
     return [];
   }
 
@@ -201,14 +201,14 @@ export function extractPullRequestNumbersForCommit(commit: CommitContext): numbe
   const title = message.split(/\r?\n/)[0] ?? "";
   const squashMatch = title.match(/\(#(\d+)\)$/);
   if (squashMatch) {
-    log(`Found PR number ${squashMatch[1]} in commit ${commit.sha} using squash format: "${message}"`);
+    verbose(`Found PR number ${squashMatch[1]} in commit ${commit.sha} using squash format: "${message}"`);
     prNumbers.push(Number.parseInt(squashMatch[1]!, 10));
   }
 
   // GitHub merge: "Merge pull request #123 from ..." - must be at start
   const mergeMatch = message.match(/^Merge pull request #(\d+)/i);
   if (mergeMatch) {
-    log(`Found PR number ${mergeMatch[1]} in commit ${commit.sha} using merge format: "${message}"`);
+    verbose(`Found PR number ${mergeMatch[1]} in commit ${commit.sha} using merge format: "${message}"`);
     prNumbers.push(Number.parseInt(mergeMatch[1]!, 10));
   }
 
@@ -216,7 +216,7 @@ export function extractPullRequestNumbersForCommit(commit: CommitContext): numbe
   if (prNumbers.length === 0) {
     const messageMatches = message.matchAll(/#(\d+)/g);
     for (const match of messageMatches) {
-      log(`Found PR number ${match[1]} in commit ${commit.sha} by extracting from message: "${message}"`);
+      verbose(`Found PR number ${match[1]} in commit ${commit.sha} by extracting from message: "${message}"`);
       prNumbers.push(Number.parseInt(match[1]!, 10));
     }
   }
