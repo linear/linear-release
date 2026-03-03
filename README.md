@@ -37,7 +37,7 @@ Linear Release supports two pipeline styles, created and configured in Linear:
 
 **Continuous**: Every deployment creates a completed release. Use `sync` after each deploy — the release is created in completed stage.
 
-**Scheduled**: An ongoing release collects changes over time, then moves through stages (e.g. "code freeze", "qa") before completion. Useful for release trains. Use `sync` to add issues, `update` to move between stages, and `complete` to finalize (move to completed stage).
+**Scheduled**: An ongoing release collects changes over time, then moves through stages (e.g. "code freeze", "qa") before completion. Useful for release trains. Use `sync` to add issues, `update` to move between stages, and `complete` to finalize (move to released stage).
 
 ## Installation
 
@@ -206,7 +206,7 @@ Path patterns can also be configured in your pipeline settings in Linear. If bot
 ## How It Works
 
 1. **Fetches the latest release** from your Linear pipeline to determine the commit range
-2. **Scans commits** between the commit for the last release and the current commit
+2. **Scans commits** between the commit from the last release and the current commit
 3. **Extracts issue identifiers** from branch names and commit messages (e.g., `feat/ENG-123-add-feature`)
 4. **Detects pull request numbers** from commit messages (e.g., `Merge pull request #42`)
 5. **Syncs data to Linear** that adds issues to a newly created completed release (continuous pipelines) or the currently in-progress release (scheduled pipelines)
