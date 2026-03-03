@@ -23,20 +23,21 @@
 
 ## Overview
 
-Linear Release is a CLI tool that integrates your CI/CD pipeline with [Linear's release management](https://linear.app/docs/releases). It automatically:
+Linear Release is a CLI tool that integrates your CI/CD pipeline with [Linear's release management](https://linear.app/docs/releases). After integrating into your CI, it automatically:
 
 - Scans commits for Linear issue identifiers (e.g., `ENG-123`)
 - Detects pull request references in commit messages
 - Creates and updates releases in Linear
-- Tracks deployment stages for scheduled releases
+- Tracks stages for scheduled releases
+- Detects changes in the right directories in monorepos with path filtering
 
 ## Pipeline Types
 
-Linear Release supports two pipeline styles, configured in Linear:
+Linear Release supports two pipeline styles, created and configured in Linear:
 
-**Continuous**: Every deployment creates a completed release. Use `sync` after each deploy — the release is created already completed.
+**Continuous**: Every deployment creates a completed release. Use `sync` after each deploy — the release is created in completed stage.
 
-**Scheduled**: An ongoing release collects changes over time, then moves through stages (e.g. "code freeze", "qa") before completion. Useful for release trains. Use `sync` to add issues, `update` to move between stages, and `complete` to finalize.
+**Scheduled**: An ongoing release collects changes over time, then moves through stages (e.g. "code freeze", "qa") before completion. Useful for release trains. Use `sync` to add issues, `update` to move between stages, and `complete` to finalize (move to completed stage).
 
 ## Installation
 
@@ -188,7 +189,7 @@ Only one log level flag can be used at a time.
 
 ### Path Filtering
 
-Use `--include-paths` to only include commits that modify specific files. This is useful for monorepos.
+Use `--include-paths` to only include commits that modify specific files. This is useful for monorepos where you make changes to different apps/services that have their own respective pipelines.
 
 ```bash
 # Only include commits affecting the mobile app
@@ -205,10 +206,10 @@ Path patterns can also be configured in your pipeline settings in Linear. If bot
 ## How It Works
 
 1. **Fetches the latest release** from your Linear pipeline to determine the commit range
-2. **Scans commits** between the last release and the current commit
+2. **Scans commits** between the commit for the last release and the current commit
 3. **Extracts issue identifiers** from branch names and commit messages (e.g., `feat/ENG-123-add-feature`)
 4. **Detects pull request numbers** from commit messages (e.g., `Merge pull request #42`)
-5. **Syncs to Linear** creating or updating the release with linked issues
+5. **Syncs data to Linear** that adds issues to a newly created completed release (continuous pipelines) or the currently in-progress release (scheduled pipelines)
 
 ## Troubleshooting
 
