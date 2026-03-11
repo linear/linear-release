@@ -156,11 +156,11 @@ linear-release update --stage="in review" --release-version="1.2.0"
 
 ### Command Targeting
 
-| Command    | With `--release-version`                                       | Without `--release-version`                                                                                                  |
-| ---------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Command    | With `--release-version`                                       | Without `--release-version`                                                                                                                                                                                               |
+| ---------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sync`     | Targets matching version or creates a release for that version | Continuous pipelines create a release with short SHA name/version. Scheduled pipelines use the currently started release, or move the latest planned release to started automatically if no started release can be found. |
-| `update`   | Updates that exact release version                             | Updates latest started release, or latest planned release if no started release exists                                       |
-| `complete` | Completes that exact release version                           | Completes latest started release                                                                                             |
+| `update`   | Updates that exact release version                             | Updates latest started release, or latest planned release if no started release exists                                                                                                                                    |
+| `complete` | Completes that exact release version                           | Completes latest started release                                                                                                                                                                                          |
 
 For scheduled pipelines, prefer always passing `--release-version` in CI, especially when releases overlap.
 
