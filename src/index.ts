@@ -1,5 +1,5 @@
 import { LinearClient, LinearClientOptions } from "@linear/sdk";
-import { commitExists, getCommitContextsBetweenShas, getCurrentGitInfo, getRepoInfo } from "./git";
+import { ensureCommitAvailable, getCommitContextsBetweenShas, getCurrentGitInfo, getRepoInfo } from "./git";
 import { scanCommits } from "./scan";
 import {
   Release,
@@ -157,9 +157,12 @@ async function syncCommand(): Promise<{
   let latestSha = await getLatestSha();
   let inspectingOnlyCurrentCommit = false;
 
-  if (!commitExists(latestSha)) {
+  try {
+    ensureCommitAvailable(latestSha);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     warn(
-      `Could not find sha ${latestSha} in the git history (it may be on a different branch or the repository history was not fully fetched)`,
+      `Could not make sha ${latestSha} available in local git history; falling back to current commit only. ${message}`,
     );
     inspectingOnlyCurrentCommit = true;
     latestSha = currentCommit.commit;
@@ -224,7 +227,14 @@ async function syncCommand(): Promise<{
 
   info("Finished");
 
-  return { release: { id: release.id, name: release.name, version: release.version, url: release.url } };
+  return {
+    release: {
+      id: release.id,
+      name: release.name,
+      version: release.version,
+      url: release.url,
+    },
+  };
 }
 
 async function completeCommand(): Promise<{
@@ -336,7 +346,9 @@ async function getLatestSha(): Promise<string> {
   return currentSha;
 }
 
-async function getPipelineSettings(): Promise<{ includePathPatterns: string[] }> {
+async function getPipelineSettings(): Promise<{
+  includePathPatterns: string[];
+}> {
   const response = await apiRequest<AccessKeyPipelineSettingsResponse>(
     `
     query pipelineSettingsByAccessKey {
@@ -418,10 +430,10 @@ async function syncRelease(
   return response.data.releaseSyncByAccessKey.release;
 }
 
-async function completeRelease(options: {
-  version?: string | null;
-  commitSha?: string | null;
-}): Promise<{ success: boolean; release: { id: string; name: string; version?: string; url?: string } | null }> {
+async function completeRelease(options: { version?: string | null; commitSha?: string | null }): Promise<{
+  success: boolean;
+  release: { id: string; name: string; version?: string; url?: string } | null;
+}> {
   const { version, commitSha } = options;
 
   const response = await apiRequest<AccessKeyCompleteReleaseResponse>(
@@ -451,7 +463,13 @@ async function completeRelease(options: {
 
 async function updateReleaseByPipeline(options: { stage?: string; version?: string | null }): Promise<{
   success: boolean;
-  release: { id: string; name: string; version?: string; url?: string; stageName: string } | null;
+  release: {
+    id: string;
+    name: string;
+    version?: string;
+    url?: string;
+    stageName: string;
+  } | null;
 }> {
   const { stage, version } = options;
   const versionInput = version ? `, version: "${version}"` : "";
@@ -496,7 +514,9 @@ async function updateReleaseByPipeline(options: { stage?: string; version?: stri
 }
 
 async function main() {
-  let result: { release: { id: string; name: string; version?: string; url?: string } } | null = null;
+  let result: {
+    release: { id: string; name: string; version?: string; url?: string };
+  } | null = null;
 
   switch (command) {
     case "sync":

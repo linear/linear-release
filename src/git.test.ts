@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   buildPathspecArgs,
+  ensureCommitAvailable,
   extractBranchName,
   extractBranchNameFromMergeMessage,
   getCommitContext,
@@ -308,6 +309,11 @@ type TempRepo = {
   };
 };
 
+type ShallowCloneRepo = TempRepo & {
+  origin: string;
+  source: string;
+};
+
 type TempRepoWithMerge = {
   cwd: string;
   commits: {
@@ -362,6 +368,17 @@ function createTempRepo(): TempRepo {
   return { cwd, commits: { first, second, third } };
 }
 
+function createShallowCloneRepo(): ShallowCloneRepo {
+  const source = createTempRepo();
+  const origin = mkdtempSync(join(tmpdir(), "linear-release-origin-"));
+  runGit(`clone --bare ${source.cwd} ${origin}`, tmpdir());
+
+  const cwd = mkdtempSync(join(tmpdir(), "linear-release-shallow-"));
+  runGit(`clone --depth 1 file://${origin} ${cwd}`, tmpdir());
+
+  return { cwd, origin, source: source.cwd, commits: source.commits };
+}
+
 /**
  * Build a deterministic git repo with a merge commit for integration tests.
  *
@@ -410,6 +427,27 @@ describe("getCommitContextsBetweenShas", () => {
 
   beforeAll(() => {
     repo = createTempRepo();
+  });
+
+  it("should auto-fetch deeper history for shallow clones", () => {
+    const shallowRepo = createShallowCloneRepo();
+
+    try {
+      expect(runGit("rev-parse --is-shallow-repository", shallowRepo.cwd)).toBe("true");
+
+      ensureCommitAvailable(shallowRepo.commits.first, shallowRepo.cwd);
+
+      const result = getCommitContextsBetweenShas(shallowRepo.commits.first, shallowRepo.commits.third, {
+        cwd: shallowRepo.cwd,
+      });
+
+      expect(result.map((commit) => commit.sha)).toEqual([shallowRepo.commits.third, shallowRepo.commits.second]);
+      expect(runGit("rev-parse --is-shallow-repository", shallowRepo.cwd)).toBe("false");
+    } finally {
+      rmSync(shallowRepo.cwd, { recursive: true, force: true });
+      rmSync(shallowRepo.origin, { recursive: true, force: true });
+      rmSync(shallowRepo.source, { recursive: true, force: true });
+    }
   });
 
   afterAll(() => {

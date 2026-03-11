@@ -98,12 +98,7 @@ export function commitExists(sha: string, cwd: string = process.cwd()): boolean 
       stdio: ["ignore", "ignore", "ignore"],
     });
     return true;
-  } catch (error) {
-    // Only log unexpected errors, not "commit not found" which is expected
-    const message = error instanceof Error ? error.message : String(error);
-    if (!message.includes("Not a valid object")) {
-      warn(`commitExists: Unexpected error checking ${sha}: ${message}`);
-    }
+  } catch {
     return false;
   }
 }
@@ -195,7 +190,7 @@ export function getCommitContext(sha: string, cwd: string = process.cwd()): Comm
  * For shallow clones, progressively fetches more history until the commit is found.
  * Throws if the commit cannot be made available (e.g., not on the current branch).
  */
-function ensureCommitAvailable(sha: string, cwd: string): void {
+export function ensureCommitAvailable(sha: string, cwd: string = process.cwd()): void {
   if (commitExists(sha, cwd)) {
     return;
   }
@@ -257,9 +252,6 @@ export function getCommitContextsBetweenShas(
     warn(`getCommitContextsBetweenShas: Invalid toSha format "${toSha}"`);
     return [];
   }
-
-  // Ensure the base commit is available (handles shallow clones)
-  ensureCommitAvailable(fromSha, cwd);
 
   const pathspecArgs = buildPathspecArgs(includePaths);
 
