@@ -287,6 +287,23 @@ describe("extractBranchNameFromMergeMessage", () => {
     });
   });
 
+  describe("GitLab format", () => {
+    it("should extract branch name from GitLab merge message with target", () => {
+      const message = "Merge branch 'ax/ENG-123-add-button' into 'develop'";
+      expect(extractBranchNameFromMergeMessage(message)).toBe("ax/ENG-123-add-button");
+    });
+
+    it("should extract branch name from GitLab merge message without target", () => {
+      const message = "Merge branch 'feature/ENG-456-fix-auth'";
+      expect(extractBranchNameFromMergeMessage(message)).toBe("feature/ENG-456-fix-auth");
+    });
+
+    it("should handle case insensitivity for GitLab format", () => {
+      const message = "MERGE BRANCH 'feature/LIN-100'";
+      expect(extractBranchNameFromMergeMessage(message)).toBe("feature/LIN-100");
+    });
+  });
+
   describe("edge cases", () => {
     it("should return null for non-merge messages", () => {
       expect(extractBranchNameFromMergeMessage("Some regular commit")).toBeNull();

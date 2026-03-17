@@ -132,15 +132,24 @@ export function isMergeCommit(sha: string, cwd: string = process.cwd()): boolean
 }
 
 /**
- * Extracts the branch name from a GitHub merge commit message.
- * Matches: "Merge pull request #X from owner/branch-name"
+ * Extracts the branch name from a merge commit message.
+ * Supports:
+ *   - GitHub: "Merge pull request #X from owner/branch-name"
+ *   - GitLab: "Merge branch 'branch-name' into 'target'"
+ *   - GitLab (no target): "Merge branch 'branch-name'"
  */
 export function extractBranchNameFromMergeMessage(message: string | null | undefined): string | null {
   if (!message) {
     return null;
   }
-  const match = message.match(/Merge pull request #\d+ from [^/]+\/(\S+)/i);
-  return match?.[1] ?? null;
+  // GitHub: "Merge pull request #123 from owner/branch-name"
+  const githubMatch = message.match(/Merge pull request #\d+ from [^/]+\/(\S+)/i);
+  if (githubMatch?.[1]) {
+    return githubMatch[1];
+  }
+  // GitLab: "Merge branch 'branch-name' into 'target'" or "Merge branch 'branch-name'"
+  const gitlabMatch = message.match(/Merge branch '([^']+)'/i);
+  return gitlabMatch?.[1] ?? null;
 }
 
 /**
