@@ -1,6 +1,6 @@
 {
   "name": "linear-release",
-  "version": "0.5.0",
+  "version": "0.6.2",
   "private": true,
   "description": "CLI tool to integrate CI/CD pipelines with Linear releases",
   "homepage": "https://github.com/linear/linear-release",
