@@ -57,10 +57,41 @@ jobs:
             --define "CLI_VERSION='$VERSION'" \
             src/index.ts --outfile=./bin/linear-release
 
+      - name: Import code signing certificate
+        if: matrix.os == 'macos-latest'
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          echo "$CSC_LINK" | base64 --decode > certificate.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import certificate.p12 -k build.keychain -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+          rm certificate.p12
+
       - name: Code sign macOS executable
         if: matrix.os == 'macos-latest'
         run: |
-          codesign --force --deep --sign - ./bin/linear-release || true
+          codesign --entitlements entitlements.mac.plist --force --options runtime \
+            --sign "Developer ID Application: Linear Orbit, Inc. (${{ secrets.APPLE_TEAM_ID }})" ./bin/linear-release
+          codesign --verify --verbose ./bin/linear-release
+
+      - name: Notarize macOS executable
+        if: matrix.os == 'macos-latest'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          ditto -c -k --keepParent ./bin/linear-release ./bin/linear-release.zip
+          xcrun notarytool submit ./bin/linear-release.zip \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait
+          rm ./bin/linear-release.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
