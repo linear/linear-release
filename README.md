@@ -153,6 +153,7 @@ linear-release update --stage="in review" --release-version="1.2.0"
 | `--json`            | `sync`, `complete`, `update` | Output result as JSON                                                                                                                                                                                                                |
 | `--quiet`           | `sync`, `complete`, `update` | Only print errors                                                                                                                                                                                                                    |
 | `--verbose`         | `sync`, `complete`, `update` | Print detailed progress including debug diagnostics                                                                                                                                                                                  |
+| `--timeout`         | `sync`, `complete`, `update` | Max duration in seconds before aborting (default: 60)                                                                                                                                                                                |
 
 ### Command Targeting
 
@@ -217,6 +218,7 @@ Path patterns can also be configured in your pipeline settings in Linear. If bot
 - **No release created by `sync`**: if no commits match the computed range (or path filters), `sync` returns `{"release":null}`.
 - **Stage update fails**: verify stage name exactly. If stage names normalize to the same value, use the exact stage name to avoid ambiguity.
 - **`--name` seems ignored**: `--name` only applies to `sync`; `complete` and `update` ignore it and print a warning.
+- **Operation timed out**: the CLI aborts after 60 seconds by default. For large repositories or slow networks, increase the limit with `--timeout=120`.
 
 ## License
 
