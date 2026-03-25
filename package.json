@@ -26,6 +26,7 @@
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt --write",
     "fmt:check": "oxfmt --check",
+    "release": "./scripts/release.sh",
     "prepare": "[ \"$CI\" = \"true\" ] || (git config --unset core.hooksPath 2>/dev/null || true; lefthook install)"
   },
   "dependencies": {
