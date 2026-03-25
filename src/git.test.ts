@@ -304,6 +304,18 @@ describe("extractBranchNameFromMergeMessage", () => {
     });
   });
 
+  describe("Bitbucket format", () => {
+    it("should extract branch name from standard Bitbucket merge message", () => {
+      const message = "Merged in romain/LIN-123-fix-auth (pull request #42)";
+      expect(extractBranchNameFromMergeMessage(message)).toBe("romain/LIN-123-fix-auth");
+    });
+
+    it("should extract branch name and ignore trailing PR title", () => {
+      const message = "Merged in feature/ENG-123-add-button (pull request #7) Improve button spacing";
+      expect(extractBranchNameFromMergeMessage(message)).toBe("feature/ENG-123-add-button");
+    });
+  });
+
   describe("edge cases", () => {
     it("should return null for non-merge messages", () => {
       expect(extractBranchNameFromMergeMessage("Some regular commit")).toBeNull();
