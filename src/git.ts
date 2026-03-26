@@ -137,6 +137,7 @@ export function isMergeCommit(sha: string, cwd: string = process.cwd()): boolean
  *   - GitHub: "Merge pull request #X from owner/branch-name"
  *   - GitLab: "Merge branch 'branch-name' into 'target'"
  *   - GitLab (no target): "Merge branch 'branch-name'"
+ *   - Bitbucket: "Merged in branch-name (pull request #X)"
  */
 export function extractBranchNameFromMergeMessage(message: string | null | undefined): string | null {
   if (!message) {
@@ -149,7 +150,12 @@ export function extractBranchNameFromMergeMessage(message: string | null | undef
   }
   // GitLab: "Merge branch 'branch-name' into 'target'" or "Merge branch 'branch-name'"
   const gitlabMatch = message.match(/Merge branch '([^']+)'/i);
-  return gitlabMatch?.[1] ?? null;
+  if (gitlabMatch?.[1]) {
+    return gitlabMatch[1];
+  }
+  // Bitbucket: "Merged in feature/ENG-123-fix-auth (pull request #42)"
+  const bitbucketMatch = message.match(/Merged in (\S+) \(pull request #\d+\)/i);
+  return bitbucketMatch?.[1] ?? null;
 }
 
 /**
