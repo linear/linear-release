@@ -15,6 +15,7 @@ jobs:
       startsWith(github.event.pull_request.head.ref, 'release/')
     permissions:
       contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,3 +51,9 @@ jobs:
         run: |
           git tag "v${{ steps.version.outputs.version }}"
           git push origin "v${{ steps.version.outputs.version }}"
+
+      - name: Trigger release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run release.yml --ref "v${{ steps.version.outputs.version }}"
