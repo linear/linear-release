@@ -43,6 +43,10 @@ const CLOSING_WORDS = [
   "completes",
   "completed",
   "completing",
+  "implement",
+  "implements",
+  "implemented",
+  "implementing",
 ];
 
 /** Magic phrases that indicate a commit contributes to an issue. Matches Linear's detection. */

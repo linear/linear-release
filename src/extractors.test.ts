@@ -246,6 +246,10 @@ describe("commit message magic word behavior", () => {
     "completes",
     "completed",
     "completing",
+    "implement",
+    "implements",
+    "implemented",
+    "implementing",
   ])("closing keyword '%s' extracts issue", (keyword) => {
     const result = extractLinearIssueIdentifiersForCommit({
       sha: "abc",
