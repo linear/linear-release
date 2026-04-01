@@ -232,8 +232,9 @@ export function ensureCommitAvailable(sha: string, cwd: string = process.cwd()):
         verbose(`Found commit ${sha}`);
         return;
       }
-    } catch {
-      // Strategy failed, try next
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      verbose(`Strategy "${label}" failed: ${reason}`);
     }
   }
 
