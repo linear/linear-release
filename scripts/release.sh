@@ -97,3 +97,5 @@ After this PR is merged, the \`v$VERSION\` tag will be created automatically, tr
 echo ""
 echo "PR created: $PR_URL"
 echo "Once merged, the tag 'v$VERSION' will be created automatically and the release workflow will run."
+echo ""
+echo "Reminder: after the release is published, update the default CLI version to v$VERSION in linear-release-action (action.yml and README.md)."
