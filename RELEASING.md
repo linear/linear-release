@@ -60,3 +60,7 @@ The **Release** workflow (`.github/workflows/release.yml`) is triggered by the n
 1. Builds platform-specific executables (linux-x64, darwin-x64, darwin-arm64) using Bun
 2. Code signs and notarizes the macOS binaries
 3. Creates a GitHub Release with the built binaries attached
+
+### 5. Update the GitHub action
+
+After publishing the new release, go to [linear-release-action](https://github.com/linear/linear-release-action) and update the [default pinned CLI version](https://github.com/linear/linear-release-action/blob/main/action.yml#L41) to the release you just created. When you've done so, publish a new release for the GitHub action as well.
