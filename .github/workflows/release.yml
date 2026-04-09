@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -62,7 +63,7 @@ jobs:
             src/index.ts --outfile=./bin/linear-release
 
       - name: Import code signing certificate
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-latest' && startsWith(github.ref, 'refs/tags/')
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -76,14 +77,14 @@ jobs:
           rm certificate.p12
 
       - name: Code sign macOS executable
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-latest' && startsWith(github.ref, 'refs/tags/')
         run: |
           codesign --entitlements entitlements.mac.plist --force --options runtime \
             --sign "Developer ID Application: Linear Orbit, Inc. (${{ secrets.APPLE_TEAM_ID }})" ./bin/linear-release
           codesign --verify --verbose ./bin/linear-release
 
       - name: Notarize macOS executable
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-latest' && startsWith(github.ref, 'refs/tags/')
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
