@@ -20,7 +20,7 @@ Use this when your team cuts release branches for stabilization. Main collects c
 
 ## Customization
 
-- **Branch patterns**: Change `release/**` to match your release branch convention.
+- **Branch patterns**: Change `release/**` in the push trigger _and_ update every `startsWith(github.ref_name, 'release/')` guard and the `${GITHUB_REF_NAME#release/}` version derivation in the workflow to match your release branch convention.
 - **Stage names**: Replace `code freeze` with whatever your first stage is called.
 - **Version derivation**: The example strips `release/` from the branch name. Adjust if your branch naming differs.
 

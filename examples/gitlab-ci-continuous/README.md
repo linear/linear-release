@@ -18,5 +18,5 @@ On every push to the default branch, the job downloads the Linear Release CLI an
 
 ## Customization
 
-- **Branch rules**: Change `$CI_DEFAULT_BRANCH` if you need to target a different branch.
+- **Branch rules**: The workflow uses GitLab's predefined `$CI_DEFAULT_BRANCH` variable, which automatically matches your repository's default branch. To target a different branch, replace `$CI_DEFAULT_BRANCH` in the rule expression with a hardcoded branch name (e.g. `if: $CI_COMMIT_BRANCH == "production"`).
 - **Monorepo path filters**: Add `--include-paths` to the `sync` command to scope the release to specific directories.
