@@ -36,14 +36,14 @@ For scheduled pipelines, always ask these explicitly (don't infer — they signi
 
 Select the right example template, read it, adapt it (branch patterns, stage names, paths, version format), and add it to an existing workflow or create a new one.
 
-| Platform       | Pipeline Type | Example                                                                                                                      |
-| -------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| GitHub Actions | Continuous    | [`github-actions-continuous.yml`](https://github.com/linear/linear-release/blob/main/examples/github-actions-continuous.yml) |
-| GitHub Actions | Scheduled     | [`github-actions-scheduled.yml`](https://github.com/linear/linear-release/blob/main/examples/github-actions-scheduled.yml)   |
-| GitLab CI      | Continuous    | [`gitlab-ci-continuous.yml`](https://github.com/linear/linear-release/blob/main/examples/gitlab-ci-continuous.yml)           |
-| GitLab CI      | Scheduled     | [`gitlab-ci-scheduled.yml`](https://github.com/linear/linear-release/blob/main/examples/gitlab-ci-scheduled.yml)             |
-| CircleCI       | Continuous    | [`circleci-continuous.yml`](https://github.com/linear/linear-release/blob/main/examples/circleci-continuous.yml)             |
-| CircleCI       | Scheduled     | [`circleci-scheduled.yml`](https://github.com/linear/linear-release/blob/main/examples/circleci-scheduled.yml)               |
+| Platform       | Pipeline Type | Example                                                                                                               |
+| -------------- | ------------- | --------------------------------------------------------------------------------------------------------------------- |
+| GitHub Actions | Continuous    | [`github-actions-continuous/`](https://github.com/linear/linear-release/blob/main/examples/github-actions-continuous) |
+| GitHub Actions | Scheduled     | [`github-actions-scheduled/`](https://github.com/linear/linear-release/blob/main/examples/github-actions-scheduled)   |
+| GitLab CI      | Continuous    | [`gitlab-ci-continuous/`](https://github.com/linear/linear-release/blob/main/examples/gitlab-ci-continuous)           |
+| GitLab CI      | Scheduled     | [`gitlab-ci-scheduled/`](https://github.com/linear/linear-release/blob/main/examples/gitlab-ci-scheduled)             |
+| CircleCI       | Continuous    | [`circleci-continuous/`](https://github.com/linear/linear-release/blob/main/examples/circleci-continuous)             |
+| CircleCI       | Scheduled     | [`circleci-scheduled/`](https://github.com/linear/linear-release/blob/main/examples/circleci-scheduled)               |
 
 For GitHub Actions, prefer the official action (`linear/linear-release-action@v0`). For other platforms, download the CLI binary and refer to the [README](https://github.com/linear/linear-release#commands) for the full command reference:
 
