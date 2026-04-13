@@ -7,6 +7,8 @@ description: Generate CI/CD configuration for Linear Release. Use when setting u
 
 # Linear Release Setup
 
+The [linear-release README](https://github.com/linear/linear-release/blob/main/README.md) is the source of truth for commands, flags, installation, environment variables, path filtering, and troubleshooting. Fetch it before generating any config — this skill focuses on the interactive setup workflow and the pipeline modeling decisions the README cannot make for the user.
+
 ## Interactive Workflow
 
 ### Step 1: Preflight
@@ -41,7 +43,9 @@ Ask, in order:
 
 ### Step 3: Generate the CI configuration
 
-For each pipeline, pick the matching example template, adapt it (branch patterns, stage names, paths, version format), and add it to an existing workflow or create a new one. Multiple pipelines mean multiple workflows or jobs, each calling the CLI with its own access key — one secret per pipeline (e.g. `LINEAR_ACCESS_KEY_IOS`, `LINEAR_ACCESS_KEY_WEB`).
+Fetch the [README](https://github.com/linear/linear-release/blob/main/README.md) first for the current commands, flags, install snippet, and command-targeting rules. For GitHub Actions, prefer the official action (`linear/linear-release-action@v0`); for other platforms, use the CLI binary per the README's Installation section.
+
+Pick the matching example template, adapt it (branch patterns, stage names, paths, version format), and add it to an existing workflow or create a new one. Multiple pipelines mean multiple workflows or jobs, each calling the CLI with its own access key — one secret per pipeline (e.g. `LINEAR_ACCESS_KEY_IOS`, `LINEAR_ACCESS_KEY_WEB`).
 
 | Platform       | Pipeline Type | Example                                                                                                               |
 | -------------- | ------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -51,13 +55,6 @@ For each pipeline, pick the matching example template, adapt it (branch patterns
 | GitLab CI      | Scheduled     | [`gitlab-ci-scheduled/`](https://github.com/linear/linear-release/blob/main/examples/gitlab-ci-scheduled)             |
 | CircleCI       | Continuous    | [`circleci-continuous/`](https://github.com/linear/linear-release/blob/main/examples/circleci-continuous)             |
 | CircleCI       | Scheduled     | [`circleci-scheduled/`](https://github.com/linear/linear-release/blob/main/examples/circleci-scheduled)               |
-
-For GitHub Actions, prefer the official action (`linear/linear-release-action@v0`). For other platforms, download the CLI binary and refer to the [README](https://github.com/linear/linear-release#commands) for the full command reference:
-
-```bash
-curl -sL https://github.com/linear/linear-release/releases/latest/download/linear-release-linux-x64 -o linear-release
-chmod +x linear-release
-```
 
 Each scheduled example includes a **monorepo** note in the header explaining how to split workflows for path filtering per platform.
 
@@ -73,23 +70,9 @@ The access key is created in Linear from the pipeline's settings page. Each pipe
 
 ## Key Concepts
 
-### Pipelines
+A Linear **release pipeline** is one independent stream of releases, with its own version history, current release, and access key. This is not a CI pipeline; it is the unit Linear uses to track releases, and your CI config calls the CLI to update it. Different products, environments, or distribution channels that ship independently are different pipelines.
 
-A release pipeline is one independent stream of releases, with its own version history, current release, and access key. This is not a CI pipeline; a Linear pipeline is the unit Linear uses to track releases, and your CI config calls the CLI to update it.
-
-Different products, environments, or distribution channels that ship independently are different pipelines. A team with an App Store build and a separate nightly internal build has two pipelines — different artifacts, different audiences, even from the same codebase.
-
-### Pipeline Types
-
-**Continuous**: Every deploy creates a completed release. One `sync` call on push.
-
-**Scheduled**: An ongoing release collects changes, then moves through stages before completion. Three commands:
-
-- `sync` — adds issues from new commits to the current release
-- `update --stage=<stage>` — moves the release to a stage (e.g. "code freeze")
-- `complete` — marks the release as shipped
-
-The typical scheduled flow uses **release branches**: `main` collects changes, a `release/*` branch is cut for stabilization, and branch creation auto-promotes to a stage. Version is derived from the branch name (e.g. `release/1.2.0` → `1.2.0`). On `main`, `sync` runs without `--release-version` so issues land on the current started release. On release branches, `sync` runs with `--release-version` to target the specific release.
+Pipelines come in two types — **continuous** and **scheduled**. See the README's [Pipeline Types](https://github.com/linear/linear-release#pipeline-types) section for the canonical description of each.
 
 ### Stages vs Pipelines
 
@@ -110,36 +93,9 @@ Stages are process gates: "code freeze", "in qa", "in review", "rc soak". They o
 
 Stages can also be **frozen** in Linear. A frozen stage makes `sync` (without `--release-version`) skip that release and land commits on the next one — a safety net for code freezes. This is a process tool, not a way to squeeze two pipelines into one.
 
-### Commands
+## Reference
 
-| Command    | Purpose                            | Key flags                                        |
-| ---------- | ---------------------------------- | ------------------------------------------------ |
-| `sync`     | Create/update release from commits | `--name`, `--release-version`, `--include-paths` |
-| `update`   | Move release to a stage            | `--stage` (required), `--release-version`        |
-| `complete` | Mark release as complete           | `--release-version`                              |
-
-### GitHub Action Inputs
-
-When using `linear/linear-release-action@v0`, inputs map to CLI flags as follows:
-
-| CLI flag             | Action input                         |
-| -------------------- | ------------------------------------ |
-| (command positional) | `command`                            |
-| `--name`             | `name`                               |
-| `--release-version`  | `version` (alias: `release_version`) |
-| `--stage`            | `stage`                              |
-| `--include-paths`    | `include_paths`                      |
-
-### Path Filtering (Monorepos)
-
-Path filters can be configured in Linear's pipeline settings or via the CLI's `--include-paths` flag (CLI takes precedence if both are set). If the user has already configured paths in Linear, the CLI flag is optional.
-
-For **monorepos with release branches**, CI platforms often can't path-filter differently per branch. The solution is two workflow/job definitions: `main` with path filtering, release branches without. Each scheduled example includes platform-specific instructions.
-
-### Requirements
-
-- **Full git history**: `fetch-depth: 0` or equivalent — shallow clones miss commits between releases.
-- **`LINEAR_ACCESS_KEY`**: Per-pipeline access key from Linear, stored as a CI secret.
+Everything about commands, flags, environment variables, command targeting, path filtering, JSON output, and troubleshooting lives in the [linear-release README](https://github.com/linear/linear-release#readme). For GitHub Action inputs and how they map to CLI flags, see the [action README](https://github.com/linear/linear-release-action#inputs). Always fetch these rather than relying on memory — they move ahead of this skill.
 
 ### Checklist
 
