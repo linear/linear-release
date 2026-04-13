@@ -17,24 +17,31 @@ Before generating config, confirm:
 2. **Detect CI platform** — look for `.github/workflows/*.yml` (GitHub Actions), `.gitlab-ci.yml` (GitLab CI), `.circleci/config.yml` (CircleCI), or other CI config.
 3. **Detect default branch** — check `git symbolic-ref refs/remotes/origin/HEAD` or the CI config. Don't assume `main`.
 
-### Step 2: Ask the user
+### Step 2: Map pipelines, then ask
 
-Gather the following information (skip questions you can infer from the codebase):
+Start by listing every build the user ships independently — each becomes its own Linear pipeline. Pipeline-vs-stage confusion is the single most common setup mistake, so whenever a split isn't obvious, apply the test in "Stages vs Pipelines" below.
 
-1. **CI platform** — if not auto-detected
-2. **Pipeline type** — continuous (every deploy = a completed release) or scheduled (releases collect changes over time, then move through stages)
-3. **Monorepo?** — if the repo has multiple apps/services, ask which paths to track (e.g. `apps/web/**`)
+Ask, in order:
 
-For scheduled pipelines, always ask these explicitly (don't infer — they significantly affect the generated config):
+1. **CI platform** — if not auto-detected.
 
-4. **Branch model** — just `main`, or `main` + release branches (e.g. `release/*`)?
-5. **Release versioning** — calendar-based (e.g. `2026.05`), semver (e.g. `1.2.0`), or default (commit SHA)? Where does the version come from — branch name, CI variable, file, git tag?
-6. **Release stages** — what stages before completion (e.g. "code freeze", "qa")?
-7. **Automation level** — all manual (via workflow_dispatch), or some automated (e.g. branch creation → code freeze)?
+2. **What do you ship, and to whom?** Prompt explicitly about common split candidates: production vs. beta or TestFlight, nightly or dogfood builds, staging, per-platform builds (iOS, Android, web), per-service in a monorepo. For each candidate, apply the test: _can these hold different commits at the same time?_ Yes → separate pipelines. No (same immutable build moving through gates) → one pipeline with stages.
+
+3. **For each pipeline: continuous or scheduled?**
+   - **Continuous** — every deploy completes a release. Typical for nightlies, dogfood, and web apps that ship on merge.
+   - **Scheduled** — releases collect changes over time and move through stages before shipping. Typical for versioned mobile and on-prem.
+
+4. **For each scheduled pipeline, ask explicitly:**
+   - **Branch model** — just `main`, or `main` + release branches (`release/*`)?
+   - **Version source** — calendar (`2026.05`), semver (`1.2.0`), or commit SHA? Derived from branch name, CI variable, file, or git tag?
+   - **Stages** — what phases does a release move through before completion (e.g. "code freeze", "in qa")? Stages are gates on one build, not separate pipelines.
+   - **Automation** — all manual via `workflow_dispatch`, or automated (e.g. cutting a release branch auto-promotes it)?
+
+5. **Monorepo paths** — if multiple pipelines share one repo, note which paths belong to each and wire up path filters in Linear pipeline settings or via `--include-paths`.
 
 ### Step 3: Generate the CI configuration
 
-Select the right example template, read it, adapt it (branch patterns, stage names, paths, version format), and add it to an existing workflow or create a new one.
+For each pipeline, pick the matching example template, adapt it (branch patterns, stage names, paths, version format), and add it to an existing workflow or create a new one. Multiple pipelines mean multiple workflows or jobs, each calling the CLI with its own access key — one secret per pipeline (e.g. `LINEAR_ACCESS_KEY_IOS`, `LINEAR_ACCESS_KEY_WEB`).
 
 | Platform       | Pipeline Type | Example                                                                                                               |
 | -------------- | ------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -68,7 +75,9 @@ The access key is created in Linear from the pipeline's settings page. Each pipe
 
 ### Pipelines
 
-A **release pipeline** in Linear represents a deployment lane — e.g. "iOS", "Android", "Web". Each product or environment you ship independently should be its own pipeline. Don't confuse this with CI pipelines — a Linear pipeline is the release tracking unit, and your CI config calls the CLI to update it.
+A release pipeline is one independent stream of releases, with its own version history, current release, and access key. This is not a CI pipeline; a Linear pipeline is the unit Linear uses to track releases, and your CI config calls the CLI to update it.
+
+Different products, environments, or distribution channels that ship independently are different pipelines. A team with an App Store build and a separate nightly internal build has two pipelines — different artifacts, different audiences, even from the same codebase.
 
 ### Pipeline Types
 
@@ -82,11 +91,24 @@ A **release pipeline** in Linear represents a deployment lane — e.g. "iOS", "A
 
 The typical scheduled flow uses **release branches**: `main` collects changes, a `release/*` branch is cut for stabilization, and branch creation auto-promotes to a stage. Version is derived from the branch name (e.g. `release/1.2.0` → `1.2.0`). On `main`, `sync` runs without `--release-version` so issues land on the current started release. On release branches, `sync` runs with `--release-version` to target the specific release.
 
-### Stages
+### Stages vs Pipelines
 
-Stages are phases a scheduled release moves through — e.g. "code freeze", "in review", "qa". They represent process steps, not environments. Different environments (staging, production) should be separate pipelines.
+A **pipeline** is one stream of releases. A **stage** is one phase inside a release on that pipeline. Confusing the two is the single most common setup mistake — work through the test below before writing any config.
 
-Stages can be **frozen** in Linear. A frozen stage makes `sync` (without `--release-version`) skip that release and target the next one — a safety net for code freezes.
+**The test:** can two things be in-flight at the same time, holding different commits?
+
+- **Yes** → separate pipelines. TestFlight running on `HEAD` while production ships 1.2 from a release branch. Web staging auto-deploying from `main` while prod lags behind. A hotfix landing in one stream but not the other.
+- **No, it's the same build moving through gates** → one pipeline with stages. A release is cut at 1.2, goes through code freeze, QA, and RC soak, then ships. The build never changes; only the phase does.
+
+Stages are process gates: "code freeze", "in qa", "in review", "rc soak". They only exist on scheduled pipelines.
+
+**Ambiguous cases — apply the test:**
+
+- **Beta / TestFlight.** TestFlight soak before GA on the _same build_ → stage on the production pipeline. A separate nightly or dogfood channel shipping _distinct builds_ → its own pipeline.
+- **Staging.** Staging that auto-deploys from `main` (or runs hotfixes prod doesn't have) → separate pipeline. Staging that holds the exact same build as prod, just earlier in the promotion path → stage.
+- **Per-service monorepo.** Each service that ships independently → its own pipeline, scoped by path filters. Unambiguous; services are never stages.
+
+Stages can also be **frozen** in Linear. A frozen stage makes `sync` (without `--release-version`) skip that release and land commits on the next one — a safety net for code freezes. This is a process tool, not a way to squeeze two pipelines into one.
 
 ### Commands
 
