@@ -33,6 +33,7 @@ curl -X POST https://circleci.com/api/v2/project/gh/ORG/REPO/pipeline \
 - **Branch patterns**: Change `release/` to match your release branch convention.
 - **Stage names**: Replace `code freeze` with whatever your first stage is called.
 - **Version derivation**: The example strips `release/` from the branch name. Adjust if your branch naming differs.
+- **Monorepo path filters**: Add the `include_paths` input to scope the release to specific directories.
 
 ## Monorepo note
 

@@ -4,14 +4,11 @@
 # release branches derive version from CIRCLE_BRANCH.
 #
 # Trigger: Auto on push, API trigger for later stage transitions and completion.
-# Customize: Branch patterns, stage names, auto-promotion stage.
+# Customize: Branch patterns, stage names, auto-promotion stage, path inclusion.
 # Note: Set LINEAR_ACCESS_KEY and CIRCLE_TOKEN in CircleCI project settings.
 #
 # Branch creation detection: CircleCI has no built-in signal, so auto-promotion
 # checks the API for previous pipelines on the branch.
-#
-# Monorepo: CircleCI doesn't support path filtering natively. Use the `path-filtering`
-# orb or split into separate workflows and use the API to conditionally trigger.
 
 version: 2.1
 
