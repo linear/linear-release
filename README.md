@@ -18,9 +18,6 @@
   <a href="https://github.com/linear/linear-release/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="Linear Release is released under the MIT license."></a>
 </p>
 
-> [!IMPORTANT]
-> Linear Release is in **public beta**. Contact [Linear support](https://linear.app/contact) or your account manager to request access. APIs and commands may change.
-
 ## Overview
 
 Linear Release is a CLI tool that integrates your CI/CD pipeline with [Linear's release management](https://linear.app/docs/releases). After integrating into your CI, it automatically:
