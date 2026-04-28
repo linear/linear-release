@@ -4,7 +4,7 @@
   </a>
 </p>
 <h1 align="center">
-  Linear Release
+  @linear/release
 </h1>
 <h3 align="center">
   Automate release tracking in your CI/CD pipeline
