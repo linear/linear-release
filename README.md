@@ -93,6 +93,8 @@ Copy the [SKILL.md](./skills/linear-release-setup/SKILL.md) into your project, o
 npx skills add linear/linear-release
 ```
 
+Once installed, run it from your AI agent with `/linear-release-setup` (or just ask the agent to set up Linear Release — it will pick up the skill automatically).
+
 ## Commands
 
 ### `sync`
