@@ -318,6 +318,9 @@ function hostToProvider(host: string): string | null {
   if (host === "github.com" || host.includes("github")) {
     return "github";
   }
+  if (host === "bitbucket.org" || host.includes("bitbucket")) {
+    return "bitbucket";
+  }
   return null;
 }
 

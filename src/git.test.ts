@@ -188,6 +188,26 @@ describe("parseRepoUrl", () => {
       });
     });
 
+    it("should parse bitbucket.org HTTPS URL", () => {
+      const result = parseRepoUrl("https://bitbucket.org/myorg/myrepo.git");
+      expect(result).toEqual({
+        owner: "myorg",
+        name: "myrepo",
+        provider: "bitbucket",
+        url: "https://bitbucket.org/myorg/myrepo",
+      });
+    });
+
+    it("should parse self-hosted Bitbucket HTTPS URL", () => {
+      const result = parseRepoUrl("https://bitbucket.mycompany.com/team/service.git");
+      expect(result).toEqual({
+        owner: "team",
+        name: "service",
+        provider: "bitbucket",
+        url: "https://bitbucket.mycompany.com/team/service",
+      });
+    });
+
     it("should parse HTTPS URL with credentials", () => {
       const result = parseRepoUrl("https://token@github.com/linear/linear-app.git");
       expect(result).toEqual({
@@ -247,6 +267,26 @@ describe("parseRepoUrl", () => {
         name: "service",
         provider: "gitlab",
         url: "https://gitlab.internal.io/team/service",
+      });
+    });
+
+    it("should parse bitbucket.org SSH URL", () => {
+      const result = parseRepoUrl("git@bitbucket.org:myorg/myrepo.git");
+      expect(result).toEqual({
+        owner: "myorg",
+        name: "myrepo",
+        provider: "bitbucket",
+        url: "https://bitbucket.org/myorg/myrepo",
+      });
+    });
+
+    it("should parse self-hosted Bitbucket SSH URL", () => {
+      const result = parseRepoUrl("git@bitbucket.mycompany.com:team/service.git");
+      expect(result).toEqual({
+        owner: "team",
+        name: "service",
+        provider: "bitbucket",
+        url: "https://bitbucket.mycompany.com/team/service",
       });
     });
   });
