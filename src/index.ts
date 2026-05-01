@@ -38,7 +38,7 @@ Commands:
   update    Update the deployment stage of a release
 
 Options:
-  --name=<name>              Custom release name (sync only)
+  --name=<name>              Custom release name (sync and complete)
   --release-version=<version>  Release version identifier
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
@@ -87,7 +87,7 @@ if (jsonOutput) {
 
 const logEnvironmentSummary = () => {
   if (releaseName) {
-    if (command === "sync") {
+    if (command === "sync" || command === "complete") {
       info(`Using custom release name: ${releaseName}`);
     }
   }
@@ -246,6 +246,7 @@ async function completeCommand(): Promise<{
   const commitSha = currentCommit.commit;
 
   const result = await completeRelease({
+    name: releaseName,
     version: releaseVersion,
     commitSha,
   });
@@ -430,11 +431,15 @@ async function syncRelease(
   return response.data.releaseSyncByAccessKey.release;
 }
 
-async function completeRelease(options: { version?: string | null; commitSha?: string | null }): Promise<{
+async function completeRelease(options: {
+  name?: string | null;
+  version?: string | null;
+  commitSha?: string | null;
+}): Promise<{
   success: boolean;
   release: { id: string; name: string; version?: string; url?: string } | null;
 }> {
-  const { version, commitSha } = options;
+  const { name, version, commitSha } = options;
 
   const response = await apiRequest<AccessKeyCompleteReleaseResponse>(
     `
@@ -452,6 +457,7 @@ async function completeRelease(options: { version?: string | null; commitSha?: s
     `,
     {
       input: {
+        name,
         version,
         commitSha,
       },

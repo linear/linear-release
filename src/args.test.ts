@@ -87,12 +87,14 @@ describe("parseCLIArgs", () => {
 
   it("returns warning when --name is used with update", () => {
     const result = parseCLIArgs(["update", "--name", "Release 1.2.0"]);
-    expect(getCLIWarnings(result)).toEqual(['--name is ignored for "update" command; it only applies to "sync"']);
+    expect(getCLIWarnings(result)).toEqual([
+      '--name is ignored for "update" command; it only applies to "sync" and "complete"',
+    ]);
   });
 
-  it("returns warning when --name is used with complete", () => {
+  it("returns no warning when --name is used with complete", () => {
     const result = parseCLIArgs(["complete", "--name", "Release 1.2.0"]);
-    expect(getCLIWarnings(result)).toEqual(['--name is ignored for "complete" command; it only applies to "sync"']);
+    expect(getCLIWarnings(result)).toEqual([]);
   });
 
   it("returns no warning when --name is used with sync", () => {
