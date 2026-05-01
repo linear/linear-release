@@ -251,6 +251,35 @@ describe("parseRepoUrl", () => {
     });
   });
 
+  describe("GitHub Enterprise Cloud (*.ghe.com)", () => {
+    it("should detect github provider for a *.ghe.com host", () => {
+      const result = parseRepoUrl("https://acme.ghe.com/engineering/platform.git");
+      expect(result).toEqual({
+        owner: "engineering",
+        name: "platform",
+        provider: "github",
+        url: "https://acme.ghe.com/engineering/platform",
+      });
+    });
+
+    it("should detect github provider for multi-part subdomains under .ghe.com", () => {
+      const result = parseRepoUrl("https://tenant-name.ghe.com/owner/repo.git");
+      expect(result?.provider).toBe("github");
+    });
+
+    it("should not match the bare ghe.com host (no subdomain)", () => {
+      const result = parseRepoUrl("https://ghe.com/owner/repo.git");
+      expect(result?.provider).toBeNull();
+    });
+
+    it("should not match hosts that merely contain .ghe.com as a substring", () => {
+      // Suffix match guards against attacker-controlled hosts that happen
+      // to include "ghe.com" somewhere in the middle of the hostname.
+      const result = parseRepoUrl("https://evil-ghe.com.attacker.com/owner/repo.git");
+      expect(result?.provider).toBeNull();
+    });
+  });
+
   describe("unknown providers", () => {
     it("should return null provider for unknown hosts", () => {
       const result = parseRepoUrl("https://example.com/myorg/myrepo.git");
