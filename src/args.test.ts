@@ -85,11 +85,9 @@ describe("parseCLIArgs", () => {
     expect(() => parseCLIArgs(["--unknown-flag"])).toThrow();
   });
 
-  it("returns warning when --name is used with update", () => {
+  it("returns no warning when --name is used with update", () => {
     const result = parseCLIArgs(["update", "--name", "Release 1.2.0"]);
-    expect(getCLIWarnings(result)).toEqual([
-      '--name is ignored for "update" command; it only applies to "sync" and "complete"',
-    ]);
+    expect(getCLIWarnings(result)).toEqual([]);
   });
 
   it("returns no warning when --name is used with complete", () => {

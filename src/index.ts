@@ -38,7 +38,7 @@ Commands:
   update    Update the deployment stage of a release
 
 Options:
-  --name=<name>              Custom release name (sync and complete)
+  --name=<name>              Custom release name
   --release-version=<version>  Release version identifier
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
@@ -87,9 +87,7 @@ if (jsonOutput) {
 
 const logEnvironmentSummary = () => {
   if (releaseName) {
-    if (command === "sync" || command === "complete") {
-      info(`Using custom release name: ${releaseName}`);
-    }
+    info(`Using custom release name: ${releaseName}`);
   }
   if (releaseVersion) {
     info(`Using custom release version: ${releaseVersion}`);
@@ -284,6 +282,7 @@ async function updateCommand(): Promise<{
     result = await updateReleaseByPipeline({
       stage: stageName,
       version: releaseVersion,
+      name: releaseName,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -467,7 +466,11 @@ async function completeRelease(options: {
   return response.data.releaseCompleteByAccessKey;
 }
 
-async function updateReleaseByPipeline(options: { stage?: string; version?: string | null }): Promise<{
+async function updateReleaseByPipeline(options: {
+  stage?: string;
+  version?: string | null;
+  name?: string | null;
+}): Promise<{
   success: boolean;
   release: {
     id: string;
@@ -477,11 +480,12 @@ async function updateReleaseByPipeline(options: { stage?: string; version?: stri
     stageName: string;
   } | null;
 }> {
-  const { stage, version } = options;
+  const { stage, version, name } = options;
   const versionInput = version ? `, version: "${version}"` : "";
   const stageInput = stage ? `, stage: "${stage}"` : "";
+  const nameInput = name ? `, name: "${name}"` : "";
 
-  const inputParts = [versionInput, stageInput]
+  const inputParts = [versionInput, stageInput, nameInput]
     .filter(Boolean)
     .map((s) => s.slice(2))
     .join(", ");
