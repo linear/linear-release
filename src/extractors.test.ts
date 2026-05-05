@@ -570,4 +570,28 @@ describe("extractPullRequestNumbersForCommit", () => {
     const result = extractPullRequestNumbersForCommit({ sha: "abc", message });
     expect(result).toEqual([]);
   });
+
+  // Numbers above the GraphQL Int (32-bit) bound cannot be GitHub PR numbers
+  // and must be filtered so they don't poison the release sync mutation.
+  it.each([
+    [
+      "FLEX-2816: fix something\n\nTwo issues from cursor[bot] review #4211934690.",
+      [],
+      "fallback drops oversized #NNN (cursor review id)",
+    ],
+    [
+      "Fix something (#51876)\n\nTwo issues from cursor[bot] review #4211934690.",
+      [51876],
+      "squash match keeps valid PR; fallback would have grabbed the oversized id but is skipped",
+    ],
+    ["Fix bug\n\nRelated to (#4211934690)", [], "fallback drops oversized parens form"],
+    ["Fix bug\n\nSee #123 and sentry #9999999999", [123], "fallback keeps small numbers and drops oversized"],
+    ["Title (#4211934690)", [], "squash format with oversized number is dropped"],
+    ["Merge pull request #4211934690 from x/y", [], "merge format with oversized number is dropped"],
+    [`Title (#${2_147_483_647})`, [2_147_483_647], "Int32 max is allowed"],
+    [`Title (#${2_147_483_648})`, [], "one above Int32 max is dropped"],
+  ])("message %j should yield %j (%s)", (message, expected) => {
+    const result = extractPullRequestNumbersForCommit({ sha: "abc", message });
+    expect(result).toEqual(expected);
+  });
 });

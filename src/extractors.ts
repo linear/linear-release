@@ -4,6 +4,14 @@ import { CommitContext } from "./types";
 const MAX_KEY_LENGTH = 7;
 
 /**
+ * Linear's API types `pullRequestReferences[].number` as a GraphQL `Int`
+ * (signed 32-bit). A `#NNN` token whose value exceeds this cannot be a real
+ * GitHub PR number and would cause the entire release sync to be rejected,
+ * so we filter such tokens out at extraction time.
+ */
+const MAX_PR_NUMBER = 2_147_483_647;
+
+/**
  * Regex for matching issue identifiers with proper word boundaries.
  * Matches the same patterns as Linear's issue identifier detection.
  *
@@ -200,28 +208,35 @@ export function extractPullRequestNumbersForCommit(commit: CommitContext): numbe
   }
 
   const prNumbers: number[] = [];
+  const pushIfValid = (raw: string, source: string): void => {
+    const number = Number.parseInt(raw, 10);
+    if (number > MAX_PR_NUMBER) {
+      verbose(
+        `Ignoring #${raw} in commit ${commit.sha} (${source}): exceeds max PR number ${MAX_PR_NUMBER}, likely not a GitHub PR reference`,
+      );
+      return;
+    }
+    verbose(`Found PR number ${number} in commit ${commit.sha} (${source}): "${message}"`);
+    prNumbers.push(number);
+  };
 
   // GitHub squash: "Title (#123)" - must be at end of title (first line)
   const title = message.split(/\r?\n/)[0] ?? "";
   const squashMatch = title.match(/\(#(\d+)\)$/);
   if (squashMatch) {
-    verbose(`Found PR number ${squashMatch[1]} in commit ${commit.sha} using squash format: "${message}"`);
-    prNumbers.push(Number.parseInt(squashMatch[1]!, 10));
+    pushIfValid(squashMatch[1]!, "squash format");
   }
 
   // GitHub merge: "Merge pull request #123 from ..." - must be at start
   const mergeMatch = message.match(/^Merge pull request #(\d+)/i);
   if (mergeMatch) {
-    verbose(`Found PR number ${mergeMatch[1]} in commit ${commit.sha} using merge format: "${message}"`);
-    prNumbers.push(Number.parseInt(mergeMatch[1]!, 10));
+    pushIfValid(mergeMatch[1]!, "merge format");
   }
 
   // Only use fallback if no matches from squash/merge formats
   if (prNumbers.length === 0) {
-    const messageMatches = message.matchAll(/#(\d+)/g);
-    for (const match of messageMatches) {
-      verbose(`Found PR number ${match[1]} in commit ${commit.sha} by extracting from message: "${message}"`);
-      prNumbers.push(Number.parseInt(match[1]!, 10));
+    for (const match of message.matchAll(/#(\d+)/g)) {
+      pushIfValid(match[1]!, "message scan");
     }
   }
 
