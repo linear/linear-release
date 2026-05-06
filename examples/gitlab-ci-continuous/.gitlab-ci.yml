@@ -3,6 +3,12 @@
 # Use when: Every deployment creates a completed release automatically.
 # Trigger: On every push to the default branch.
 # Customize: Branch rules, path filters (--include-paths).
+#
+# Runtime requirements:
+# - Image must be glibc-based (Debian/Ubuntu, not Alpine/musl) and have
+#   `git` + `curl` on PATH. Install git with apt-get if missing.
+# - `GIT_STRATEGY` must not be `none` or `empty`. If your project sets it
+#   as a default, override it on this job (`GIT_STRATEGY: clone`).
 
 .linear-release-setup: &linear-release-setup
   before_script:

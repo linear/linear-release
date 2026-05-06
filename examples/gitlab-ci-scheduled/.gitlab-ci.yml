@@ -7,6 +7,12 @@
 # Trigger: Auto on push, manual for later stage transitions and completion.
 # Customize: Branch patterns, stage names, version derivation.
 #
+# Runtime requirements:
+# - Image must be glibc-based (Debian/Ubuntu, not Alpine/musl) and have
+#   `git` + `curl` on PATH. Install git with apt-get if missing.
+# - `GIT_STRATEGY` must not be `none` or `empty`. If your project sets it
+#   as a default, override it on these jobs (`GIT_STRATEGY: clone`).
+#
 # Monorepo: Add `changes` filter to the main job's rules only (not release branch jobs):
 #   rules:
 #     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
