@@ -119,6 +119,9 @@ linear-release complete
 
 # Completes the release with the specified version
 linear-release complete --release-version="1.2.0"
+
+# Sets a custom name when completing the release
+linear-release complete --name="Release 1.2.0"
 ```
 
 ### `update`
@@ -131,6 +134,9 @@ linear-release update --stage="in review"
 
 # Updates the release with the specified version
 linear-release update --stage="in review" --release-version="1.2.0"
+
+# Sets a custom name when updating the release
+linear-release update --stage="in review" --name="Release 1.2.0"
 ```
 
 ## Configuration
@@ -143,16 +149,16 @@ linear-release update --stage="in review" --release-version="1.2.0"
 
 ### CLI Options
 
-| Option              | Commands                     | Description                                                                                                                                                                                                                           |
-| ------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--name`            | `sync`                       | Custom release name. Whenever `sync` is called with `--name`, the value is applied to the targeted release — both newly created releases and existing ones get the provided name. Ignored (with warning) for `complete` and `update`. |
-| `--release-version` | `sync`, `complete`, `update` | Release version identifier. For `sync`, defaults to short commit hash. For `complete` and `update`, if omitted, targets the most recent started release.                                                                              |
-| `--stage`           | `update`                     | Target deployment stage (required for `update`)                                                                                                                                                                                       |
-| `--include-paths`   | `sync`                       | Filter commits by changed file paths                                                                                                                                                                                                  |
-| `--json`            | `sync`, `complete`, `update` | Output result as JSON                                                                                                                                                                                                                 |
-| `--quiet`           | `sync`, `complete`, `update` | Only print errors                                                                                                                                                                                                                     |
-| `--verbose`         | `sync`, `complete`, `update` | Print detailed progress including debug diagnostics                                                                                                                                                                                   |
-| `--timeout`         | `sync`, `complete`, `update` | Max duration in seconds before aborting (default: 60)                                                                                                                                                                                 |
+| Option              | Commands                     | Description                                                                                                                                                                                                              |
+| ------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--name`            | `sync`, `complete`, `update` | Custom release name. For `sync`, the value is applied to the targeted release — both newly created releases and existing ones get the provided name. For `complete` and `update`, sets the name on the targeted release. |
+| `--release-version` | `sync`, `complete`, `update` | Release version identifier. For `sync`, defaults to short commit hash. For `complete` and `update`, if omitted, targets the most recent started release.                                                                 |
+| `--stage`           | `update`                     | Target deployment stage (required for `update`)                                                                                                                                                                          |
+| `--include-paths`   | `sync`                       | Filter commits by changed file paths                                                                                                                                                                                     |
+| `--json`            | `sync`, `complete`, `update` | Output result as JSON                                                                                                                                                                                                    |
+| `--quiet`           | `sync`, `complete`, `update` | Only print errors                                                                                                                                                                                                        |
+| `--verbose`         | `sync`, `complete`, `update` | Print detailed progress including debug diagnostics                                                                                                                                                                      |
+| `--timeout`         | `sync`, `complete`, `update` | Max duration in seconds before aborting (default: 60)                                                                                                                                                                    |
 
 ### Command Targeting
 
@@ -216,7 +222,6 @@ Path patterns can also be configured in your pipeline settings in Linear. If bot
 - **Unexpected release was updated/completed**: pass `--release-version` explicitly so the command does not target the latest started/planned release.
 - **No release created by `sync`**: if no commits match the computed range (or path filters), `sync` returns `{"release":null}`.
 - **Stage update fails**: verify stage name exactly. If stage names normalize to the same value, use the exact stage name to avoid ambiguity.
-- **`--name` seems ignored**: `--name` only applies to `sync`; `complete` and `update` ignore it and print a warning.
 - **Operation timed out**: the CLI aborts after 60 seconds by default. For large repositories or slow networks, increase the limit with `--timeout=120`.
 
 ## License

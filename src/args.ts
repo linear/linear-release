@@ -64,12 +64,6 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
   };
 }
 
-export function getCLIWarnings(args: ParsedCLIArgs): string[] {
-  const warnings: string[] = [];
-
-  if (args.releaseName && args.command !== "sync") {
-    warnings.push(`--name is ignored for "${args.command}" command; it only applies to "sync"`);
-  }
-
-  return warnings;
+export function getCLIWarnings(_args: ParsedCLIArgs): string[] {
+  return [];
 }
