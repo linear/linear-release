@@ -1,5 +1,11 @@
 import { LinearClient, LinearClientOptions } from "@linear/sdk";
-import { ensureCommitAvailable, getCommitContextsBetweenShas, getCurrentGitInfo, getRepoInfo } from "./git";
+import {
+  assertGitAvailable,
+  ensureCommitAvailable,
+  getCommitContextsBetweenShas,
+  getCurrentGitInfo,
+  getRepoInfo,
+} from "./git";
 import { scanCommits } from "./scan";
 import {
   Release,
@@ -524,6 +530,8 @@ async function updateReleaseByPipeline(options: {
 }
 
 async function main() {
+  assertGitAvailable();
+
   let result: {
     release: { id: string; name: string; version?: string; url?: string };
   } | null = null;
