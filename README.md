@@ -223,6 +223,9 @@ Path patterns can also be configured in your pipeline settings in Linear. If bot
 - **No release created by `sync`**: if no commits match the computed range (or path filters), `sync` returns `{"release":null}`.
 - **Stage update fails**: verify stage name exactly. If stage names normalize to the same value, use the exact stage name to avoid ambiguity.
 - **Operation timed out**: the CLI aborts after 60 seconds by default. For large repositories or slow networks, increase the limit with `--timeout=120`.
+- **`git` not on PATH**: the CLI shells out to `git`. Install it in your CI image (e.g. `apt-get install -y git` on Debian/Ubuntu).
+- **No `.git` directory found**: the CLI must run inside a full clone. On GitLab CI, set `GIT_STRATEGY: clone` (not `none` or `empty`) and `GIT_DEPTH: 0` on the linear-release job.
+- **Binary fails to start with "not found" or loader errors**: the prebuilt binary is glibc-linked and will not run on Alpine/musl images. Switch to a Debian/Ubuntu base (`debian:bookworm-slim`, `ubuntu:24.04`).
 
 ## License
 
