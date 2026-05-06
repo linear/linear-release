@@ -30,6 +30,35 @@ export function buildPathspecArgs(includePaths: string[] | null): string {
   return `-- ${patterns.join(" ")}`;
 }
 
+/**
+ * Verifies the runtime environment can satisfy the CLI's git requirements:
+ *   1. The `git` binary is on PATH.
+ *   2. The current working directory is inside a git repository.
+ *
+ * Call once at startup, before any other git operations, so cryptic
+ * downstream failures (ENOENT, "not a git repository") become useful
+ * diagnostics for CI users.
+ */
+export function assertGitAvailable(cwd: string = process.cwd()): void {
+  try {
+    execSync("git --version", {
+      cwd,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+  } catch {
+    throw new Error("linear-release requires `git` on PATH, but `git --version` failed. Install git in your CI image.");
+  }
+
+  try {
+    execSync("git rev-parse --is-inside-work-tree", {
+      cwd,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+  } catch {
+    throw new Error("linear-release must run inside a git repository, but no `.git` directory was found.");
+  }
+}
+
 export function getCurrentGitInfo(cwd: string = process.cwd()): GitInfo {
   try {
     const branch = execSync("git rev-parse --abbrev-ref HEAD", {

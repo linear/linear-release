@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  assertGitAvailable,
   buildPathspecArgs,
   ensureCommitAvailable,
   extractBranchName,
@@ -743,5 +744,37 @@ describe("merge commit handling", () => {
       const mergeCommitCount = result.filter((c) => c.sha === mergeRepo.commits.mergeCommit).length;
       expect(mergeCommitCount).toBe(1);
     });
+  });
+});
+
+describe("assertGitAvailable", () => {
+  it("succeeds inside a git repository with git on PATH", () => {
+    const repo = createTempRepo();
+    try {
+      expect(() => assertGitAvailable(repo.cwd)).not.toThrow();
+    } finally {
+      rmSync(repo.cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("throws when not inside a git repository", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "linear-release-no-repo-"));
+    try {
+      expect(() => assertGitAvailable(cwd)).toThrow(/git repository/);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("throws with a PATH hint when the git binary is missing", () => {
+    const repo = createTempRepo();
+    const originalPath = process.env.PATH;
+    process.env.PATH = "/nonexistent-linear-release-test-dir";
+    try {
+      expect(() => assertGitAvailable(repo.cwd)).toThrow(/git.*on PATH/);
+    } finally {
+      process.env.PATH = originalPath;
+      rmSync(repo.cwd, { recursive: true, force: true });
+    }
   });
 });
