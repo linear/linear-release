@@ -315,7 +315,7 @@ function hostToProvider(host: string): string | null {
   if (host === "gitlab.com" || host.includes("gitlab")) {
     return "gitlab";
   }
-  if (host === "github.com" || host.includes("github")) {
+  if (host === "github.com" || host.endsWith(".ghe.com") || host.includes("github")) {
     return "github";
   }
   return null;
