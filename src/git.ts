@@ -46,7 +46,9 @@ export function assertGitAvailable(cwd: string = process.cwd()): void {
       stdio: ["ignore", "ignore", "pipe"],
     });
   } catch {
-    throw new Error("linear-release requires `git` on PATH, but `git --version` failed. Install git in your CI image.");
+    throw new Error(
+      "linear-release requires `git` on PATH, but `git --version` failed. Please make sure that git is installed and available.",
+    );
   }
 
   try {
