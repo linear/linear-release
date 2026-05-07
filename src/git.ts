@@ -122,6 +122,25 @@ export function extractBranchName(rawDecorations: string | undefined): string | 
   return preferred.sort((a, b) => b.length - a.length)[0]!;
 }
 
+/**
+ * Returns `sha`'s parent SHAs (in order), or an empty array if the commit has
+ * no reachable parents — root commit, unknown SHA, or shallow clone where the
+ * parents aren't in the local repo. A merge commit has 2+ parents; a regular
+ * commit has 1; the root commit has 0.
+ */
+export function getCommitParents(sha: string, cwd: string = process.cwd()): string[] {
+  try {
+    const out = execSync(`git log -1 --format=%P ${sha}`, {
+      cwd,
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    }).trim();
+    return out ? out.split(" ").filter((p) => /^[0-9a-f]{40}$/i.test(p)) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function commitExists(sha: string, cwd: string = process.cwd()): boolean {
   try {
     execSync(`git cat-file -e ${sha}^{commit}`, {
@@ -135,32 +154,6 @@ export function commitExists(sha: string, cwd: string = process.cwd()): boolean 
 }
 
 const SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
-
-/**
- * Returns true if the commit has more than one parent (i.e., is a merge commit).
- */
-export function isMergeCommit(sha: string, cwd: string = process.cwd()): boolean {
-  if (!SHA_PATTERN.test(sha)) {
-    warn(`isMergeCommit: Invalid SHA format "${sha}"`);
-    return false;
-  }
-
-  try {
-    // %P returns space-separated parent hashes
-    // Regular commits have 1 parent (no space), merge commits have 2+ (contains space)
-    const parentHashes = execSync(`git log -1 --format=%P ${sha}`, {
-      cwd,
-      stdio: ["ignore", "pipe", "ignore"],
-      encoding: "utf8",
-    }).trim();
-
-    return parentHashes.includes(" ");
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    warn(`isMergeCommit: Failed to check ${sha}: ${message}`);
-    return false;
-  }
-}
 
 /**
  * Extracts the branch name from a merge commit message.
@@ -211,21 +204,8 @@ export function getCommitContext(sha: string, cwd: string = process.cwd()): Comm
     warn(`getCommitContext: Invalid SHA format "${sha}"`);
     return null;
   }
-
   try {
-    const output = execSync(`git log -1 --format=%H%x1f%B%x1f%D%x1e ${sha}`, {
-      cwd,
-      stdio: ["ignore", "pipe", "pipe"],
-      encoding: "utf8",
-    });
-
-    const chunk = output.split("\x1e")[0];
-    if (!chunk || chunk.trim().length === 0) {
-      warn(`getCommitContext: Empty output for ${sha}`);
-      return null;
-    }
-
-    return parseCommitChunk(chunk);
+    return runLog(`-1 ${sha}`, cwd)[0] ?? null;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     warn(`getCommitContext: Failed to get context for ${sha}: ${message}`);
@@ -278,8 +258,33 @@ export function ensureCommitAvailable(sha: string, cwd: string = process.cwd()):
   );
 }
 
+function runLog(rangeArgs: string, cwd: string): CommitContext[] {
+  const output = execSync(`git log --format=%H%x1f%B%x1f%D%x1e ${rangeArgs}`, {
+    cwd,
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+  });
+  return output
+    .split("\x1e")
+    .filter((chunk) => chunk.trim().length > 0)
+    .map(parseCommitChunk);
+}
+
 /**
  * Returns commits between two SHAs, optionally filtered by file paths.
+ *
+ * When `includePaths` is set we pass `--full-history` to disable git's
+ * default history simplification, which would otherwise drop merge commits
+ * that are TREESAME to a parent within the paths — i.e. virtually every
+ * GitHub merge, since the merge itself adds no new file changes. Dropping
+ * them loses the issue keys encoded in `feature/LIN-XXX-...` branch names.
+ * `--full-history` keeps every commit (merge or not) that contributed to
+ * the path's history, including merges whose contribution arrived via a
+ * non-first parent. See LIN-69346.
+ *
+ * For `fromSha === toSha` (first-time sync where there's no prior release),
+ * we add `--no-walk` so git evaluates the requested commit directly instead
+ * of walking back to the first ancestor matching the pathspec.
  *
  * @param fromSha - Starting commit SHA (exclusive)
  * @param toSha - Ending commit SHA (inclusive)
@@ -302,37 +307,14 @@ export function getCommitContextsBetweenShas(
     return [];
   }
 
-  const pathspecArgs = buildPathspecArgs(includePaths);
-
-  // If fromSha and toSha are the same, get that single commit only
-  const logCommand =
-    fromSha === toSha
-      ? `git log -1 --format=%H%x1f%B%x1f%D%x1e ${toSha} ${pathspecArgs}`
-      : `git log --format=%H%x1f%B%x1f%D%x1e ${fromSha}..${toSha} ${pathspecArgs}`;
-
-  const output = execSync(logCommand, {
-    cwd,
-    stdio: ["ignore", "pipe", "pipe"],
-    encoding: "utf8",
-  });
-
-  const commits = output
-    .split("\x1e")
-    .filter((chunk) => chunk.trim().length > 0)
-    .map(parseCommitChunk);
-
-  /**
-   * Path filtering can exclude a merge commit at toSha. This is because merge commits have no direct file changes.
-   * We still want to include it for metadata extraction, like PR numbers and branch names.
-   */
-  const toShaWasExcluded = includePaths?.length && !commits.some((c) => c.sha === toSha);
-
-  if (toShaWasExcluded && isMergeCommit(toSha, cwd)) {
-    const mergeCommit = getCommitContext(toSha, cwd);
-    if (mergeCommit) {
-      commits.unshift(mergeCommit);
-    }
-  }
+  const args = [
+    includePaths?.length ? "--full-history" : "",
+    fromSha === toSha ? `--no-walk ${toSha}` : `${fromSha}..${toSha}`,
+    buildPathspecArgs(includePaths),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const commits = runLog(args, cwd);
 
   if (commits.length === 0) {
     verbose(

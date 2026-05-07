@@ -3,6 +3,7 @@ import {
   assertGitAvailable,
   ensureCommitAvailable,
   getCommitContextsBetweenShas,
+  getCommitParents,
   getCurrentGitInfo,
   getRepoInfo,
 } from "./git";
@@ -339,16 +340,26 @@ async function getLatestSha(): Promise<string> {
     return latestSha;
   }
 
-  // If we can't find a release or the latest release has no commit SHA, we will only inspect the current commit
   if (!latestRelease) {
-    verbose("Could not find latest release, assuming it's the first release, will only inspect the current commit");
+    verbose("Could not find latest release, assuming it's the first release");
   } else if (!latestRelease.commitSha) {
-    verbose("Latest release has no commit SHA, will only inspect the current commit");
+    verbose("Latest release has no commit SHA");
   }
   const currentSha = await getCurrentGitInfo().commit;
   if (!currentSha) {
     throw new Error("Could not get current commit");
   }
+
+  // First sync, merge HEAD: expand to HEAD^1 so we scan everything brought in
+  // via the merge — otherwise the LIN keys live on HEAD^2's branch and we'd
+  // miss them all. For non-merge HEAD (squash, direct commit) the LIN key is
+  // on HEAD itself, so the conservative HEAD-only scan is correct.
+  const parents = getCommitParents(currentSha);
+  if (parents.length > 1 && parents[0]) {
+    verbose(`First sync on merge HEAD: using HEAD^1 (${parents[0]}) as the scan boundary`);
+    return parents[0];
+  }
+  verbose("First sync: only inspecting current commit");
   return currentSha;
 }
 
