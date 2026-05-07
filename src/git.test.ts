@@ -588,14 +588,37 @@ describe("getCommitContextsBetweenShas", () => {
     expect(result[0]?.sha).toBe(repo.commits.first);
   });
 
-  it("should normalize commit message whitespace", () => {
+  it("should collapse horizontal whitespace but preserve newlines", () => {
     const result = getCommitContextsBetweenShas(repo.commits.first, repo.commits.first, {
       cwd: repo.cwd,
     });
     expect(result).toHaveLength(1);
-    // The first commit has "feat: add src file  with  extra  spaces" - multiple spaces should be normalized
-    expect(result[0]?.message).not.toMatch(/\s{2,}/);
+    // Multiple spaces in the subject should be collapsed
     expect(result[0]?.message).toBe("feat: add src file with extra spaces");
+  });
+
+  it("should preserve newlines so extractors can distinguish title from body", () => {
+    // Standalone tempdir so the multiline body is independent of the shared fixture.
+    const cwd = mkdtempSync(join(tmpdir(), "linear-release-multiline-"));
+    try {
+      runGit("init", cwd);
+      runGit('config user.email "test@example.com"', cwd);
+      runGit('config user.name "Test User"', cwd);
+      writeFileSync(join(cwd, "file.txt"), "x");
+      runGit("add .", cwd);
+      runGit('commit -m "Add feature (#100)" -m "Closes LIN-200" -m "Co-authored-by: Other <other@example.com>"', cwd);
+      const sha = runGit("rev-parse HEAD", cwd);
+
+      const result = getCommitContextsBetweenShas(sha, sha, { cwd });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.message).toBe(
+        "Add feature (#100)\n\nCloses LIN-200\n\nCo-authored-by: Other <other@example.com>",
+      );
+      // First line is the actual title (not the entire flattened body)
+      expect(result[0]!.message!.split("\n")[0]).toBe("Add feature (#100)");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it("should return empty array when no commits in range", () => {

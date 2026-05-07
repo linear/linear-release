@@ -195,7 +195,9 @@ export function extractBranchNameFromMergeMessage(message: string | null | undef
  */
 function parseCommitChunk(chunk: string): CommitContext {
   const [sha, rawMessage, rawDecorations] = chunk.split("\x1f");
-  const message = (rawMessage ?? "").trim().replace(/\s+/g, " ");
+  // Collapse runs of horizontal whitespace, but keep newlines so downstream
+  // extractors can tell the title from the body and skip nested commit blocks.
+  const message = (rawMessage ?? "").trim().replace(/[ \t]+/g, " ");
   const branchName = extractBranchNameFromMergeMessage(message) ?? extractBranchName(rawDecorations);
 
   return { sha: sha.trim(), branchName, message };

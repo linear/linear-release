@@ -546,6 +546,125 @@ describe("getRevertMessageDepth", () => {
   });
 });
 
+describe("squash sub-commit blocks", () => {
+  // `git merge --squash` followed by `git commit` writes a body that begins
+  // with a "Squashed commit of the following:" header and dumps every commit
+  // pulled in via the squash, including upstream commits merged into the
+  // feature branch. Those references describe branch history, not the change
+  // landing here, so they must not be re-attributed to this release.
+
+  it("ignores PR refs inside a squash sub-commit dump (no real title)", () => {
+    const message = `Squashed commit of the following:
+
+commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+    Older shipped PR title (#85)
+
+    Fixes LIN-50`;
+    expect(extractPullRequestNumbersForCommit({ sha: "abc", message })).toEqual([]);
+    expect(ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual([]);
+  });
+
+  it("ignores PR refs inside a squash dump but keeps a real title prepended", () => {
+    const message = `New dashboard widget (#100)
+
+Squashed commit of the following:
+
+commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+    Older shipped PR title (#85)
+
+    Fixes LIN-50
+
+commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+    Bug fix for graph render
+
+    Fixes LIN-100`;
+    // Title's PR # is the legitimate one; body's #85 must not leak.
+    expect(extractPullRequestNumbersForCommit({ sha: "abc", message })).toEqual([100]);
+    // LIN-100 is in a sub-commit body — also nested history. With the squash
+    // dump stripped, neither LIN-50 (already shipped) nor LIN-100 (whose
+    // attribution belongs to a different commit) are re-extracted from here.
+    expect(ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual([]);
+  });
+
+  it("keeps magic-word refs from the PR description body above the squash dump", () => {
+    const message = `New dashboard widget (#100)
+
+Closes LIN-100
+
+Squashed commit of the following:
+
+commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+    Fixes LIN-50`;
+    expect(extractPullRequestNumbersForCommit({ sha: "abc", message })).toEqual([100]);
+    expect(ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual(["LIN-100"]);
+  });
+
+  it("does not extract PR # from body cross-reference like 'builds on #85'", () => {
+    const message = `Add settings page (#100)
+
+This builds on #85 and #87. Closes LIN-200.`;
+    expect(extractPullRequestNumbersForCommit({ sha: "abc", message })).toEqual([100]);
+    expect(ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual(["LIN-200"]);
+  });
+
+  it("preserves a user-authored footer appended after the squash dump", () => {
+    // Default `git merge --squash` puts the dump at the top, so any footer
+    // (e.g., trailers like `Closes LIN-X`, `Co-authored-by: ...`) typically
+    // ends up below the dump after the developer edits the message.
+    const message = `Squashed commit of the following:
+
+commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+Author: Dev <dev@example.com>
+Date:   Wed May 6 16:45:34 2026 +0000
+
+    Edge cases
+
+commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+Author: Dev <dev@example.com>
+Date:   Wed May 6 16:45:34 2026 +0000
+
+    Implement search filter
+
+Closes LIN-200`;
+    expect(ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual(["LIN-200"]);
+  });
+
+  it("preserves both a prepended title and an appended footer around the dump", () => {
+    const message = `Search filter (#100)
+
+Squashed commit of the following:
+
+commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+    Older shipped PR title (#85)
+
+    Fixes LIN-50
+
+Closes LIN-200`;
+    expect(extractPullRequestNumbersForCommit({ sha: "abc", message })).toEqual([100]);
+    expect(ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message })).sort()).toEqual(["LIN-200"]);
+  });
+
+  it("handles the marker without recognizable commit blocks below", () => {
+    const message = `Squashed commit of the following:
+
+Closes LIN-200`;
+    expect(ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual(["LIN-200"]);
+  });
+
+  it("does not strip squash blocks from revert add-extraction (revert path is already blocked)", () => {
+    // A revert message that wraps a squash dump shouldn't add anything.
+    const message = `Revert "Squashed commit of the following:
+
+    Fixes LIN-50"`;
+    expect(ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual([]);
+  });
+});
+
 describe("extractPullRequestNumbersForCommit", () => {
   // Messages that should extract PR numbers
   it.each([
@@ -553,7 +672,6 @@ describe("extractPullRequestNumbersForCommit", () => {
     ["Fix #124 with better handling", [124], "hash in middle of title"],
     ["Merge pull request #431 from org/branch", [431], "GitHub merge format"],
     ["Merge pull request #42 from owner/branch\n\nDescription", [42], "merge with multiline description"],
-    ["Fix bug\n\nRelated to (#999)", [999], "PR in commit body"],
   ])("message %j should yield %j (%s)", (message, expected) => {
     const result = extractPullRequestNumbersForCommit({ sha: "abc", message });
     expect(result).toEqual(expected);
@@ -577,15 +695,15 @@ describe("extractPullRequestNumbersForCommit", () => {
     [
       "FLEX-2816: fix something\n\nTwo issues from cursor[bot] review #4211934690.",
       [],
-      "fallback drops oversized #NNN (cursor review id)",
+      "title has no PR number and body scan is no longer attempted",
     ],
     [
       "Fix something (#51876)\n\nTwo issues from cursor[bot] review #4211934690.",
       [51876],
-      "squash match keeps valid PR; fallback would have grabbed the oversized id but is skipped",
+      "squash match keeps valid PR; body cross-references are ignored",
     ],
-    ["Fix bug\n\nRelated to (#4211934690)", [], "fallback drops oversized parens form"],
-    ["Fix bug\n\nSee #123 and sentry #9999999999", [123], "fallback keeps small numbers and drops oversized"],
+    ["Fix bug\n\nRelated to (#4211934690)", [], "body fallback removed: cross-reference in body is ignored"],
+    ["Fix bug\n\nSee #123 and sentry #9999999999", [], "body fallback removed: numbers in body don't leak"],
     ["Title (#4211934690)", [], "squash format with oversized number is dropped"],
     ["Merge pull request #4211934690 from x/y", [], "merge format with oversized number is dropped"],
     [`Title (#${2_147_483_647})`, [2_147_483_647], "Int32 max is allowed"],
