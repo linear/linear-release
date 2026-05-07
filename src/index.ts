@@ -350,10 +350,9 @@ async function getLatestSha(): Promise<string> {
     throw new Error("Could not get current commit");
   }
 
-  // First sync, merge HEAD: expand to HEAD^1 so we scan everything brought in
-  // via the merge — otherwise the LIN keys live on HEAD^2's branch and we'd
-  // miss them all. For non-merge HEAD (squash, direct commit) the LIN key is
-  // on HEAD itself, so the conservative HEAD-only scan is correct.
+  // Merge HEAD has no issue keys on itself — they live on HEAD^2's branch.
+  // Scanning HEAD^1..HEAD picks them up. Non-merge HEAD carries its own key,
+  // so HEAD-only stays correct.
   const parents = getCommitParents(currentSha);
   if (parents.length > 1 && parents[0]) {
     verbose(`First sync on merge HEAD: using HEAD^1 (${parents[0]}) as the scan boundary`);

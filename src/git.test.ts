@@ -450,10 +450,9 @@ function runGit(command: string, cwd: string): string {
 }
 
 /**
- * Cuts a feature branch off `baseBranch`, lands one file change, merges it
- * back via `--no-ff` with a GitHub-style PR-merge message, then deletes the
- * branch (mirroring CI checkout state where merged feature branches are
- * gone). Returns the merge commit SHA.
+ * Cuts `branch` off `baseBranch`, lands one file change, merges back via
+ * `--no-ff` with a GitHub-style PR-merge message, then deletes `branch` to
+ * mirror a CI checkout (merged feature branches gone). Returns the merge SHA.
  */
 function mergeFeatureBranch(opts: {
   cwd: string;
@@ -566,9 +565,8 @@ function createTempRepoWithMerge(): TempRepoWithMerge {
 }
 
 /**
- * Each feature branch is merged directly into main, then a release branch is
- * cut, gets one commit, and merges back. merge300 touches infra/ — outside
- * the includePaths used in tests, so it must not leak.
+ * Three feature branches merged into main, then a release branch with one
+ * commit merged back as HEAD. `merge300` touches `infra/` only.
  */
 function createTempRepoWithMultipleMerges(): TempRepoWithMultipleMerges {
   const cwd = mkdtempSync(join(tmpdir(), "linear-release-multi-merge-"));
@@ -622,9 +620,9 @@ function createTempRepoWithMultipleMerges(): TempRepoWithMultipleMerges {
 }
 
 /**
- * Customer's release-branch workflow: features are merged INTO a release
- * branch (not main), then rel is merged into main as HEAD. LIN-300 is mobile-
- * only — outside the path filter used in tests.
+ * Release-branch workflow: features merged INTO `rel/2026-05-06`, then rel
+ * merged into main as HEAD. `feature/LIN-300-mobile` touches `mobile-android/`
+ * only.
  */
 function createTempRepoReleaseBranch(): TempRepoReleaseBranch {
   const cwd = mkdtempSync(join(tmpdir(), "linear-release-rel-branch-"));
@@ -803,8 +801,9 @@ describe("getCommitContextsBetweenShas", () => {
     try {
       process.chdir(join(repo.cwd, "src"));
 
-      // Without the fix, this would fail because git would look for "src/**" relative to
-      // the subdirectory (i.e., src/src/**) which doesn't exist
+      // The `:(top,...)` magic prefix in buildPathspecArgs anchors the glob
+      // at the repo root regardless of cwd; without it git would resolve
+      // "src/**" against the subdirectory (i.e., src/src/**).
       const result = getCommitContextsBetweenShas(
         repo.commits.first,
         repo.commits.third,
@@ -890,15 +889,15 @@ describe("merge commit handling", () => {
 
   describe("getCommitContextsBetweenShas with merge commits", () => {
     it("should include merge commit when path filtering would exclude it", () => {
-      // Without the fix, path filtering for "src/**" would only return the feature branch commit
-      // because merge commits don't have direct file changes.
-      // With the fix, the merge commit should be included for metadata extraction.
+      // The merge node itself adds no file changes, so default simplification
+      // would drop it; `--full-history` keeps it for metadata (PR number,
+      // branch name) extraction.
       const result = getCommitContextsBetweenShas(mergeRepo.commits.base, mergeRepo.commits.mergeCommit, {
         includePaths: ["src/**"],
         cwd: mergeRepo.cwd,
       });
 
-      // Should include both: the merge commit (for metadata) and the feature commit (for file changes)
+      // Both the merge (for metadata) and the feature commit (for file changes).
       expect(result.length).toBeGreaterThanOrEqual(2);
 
       // The merge commit should be first (unshifted)
@@ -935,10 +934,10 @@ describe("merge commit handling", () => {
       rmSync(multiRepo.cwd, { recursive: true, force: true });
     });
 
-    it("should return in-path merges and drop out-of-path merges across a multi-merge range (LIN-69346)", () => {
-      // Without the fix, git's history simplification drops every merge commit
-      // because they're TREESAME to a parent within the paths, losing the
-      // feature/LIN-XXX branch names that are the only carrier of issue keys.
+    it("should return in-path merges and drop out-of-path merges across a multi-merge range", () => {
+      // `--full-history` keeps merges whose contribution arrived via a non-
+      // first parent. Their tree equals one parent's, so default simplification
+      // would drop them — and with them the issue keys in their branch names.
       const result = getCommitContextsBetweenShas(multiRepo.commits.base, multiRepo.commits.headMerge, {
         includePaths: ["frontend/**", "backend/**"],
         cwd: multiRepo.cwd,
@@ -971,9 +970,9 @@ describe("merge commit handling", () => {
     });
 
     it("should not drift to an unrelated ancestor when fromSha === toSha and HEAD is outside includePaths", () => {
-      // The legacy `git log -1 <sha> -- <paths>` walked back from <sha> when it
-      // didn't match, returning an unrelated ancestor. We use --no-walk semantics
-      // instead: match the exact commit or return nothing.
+      // `git log -1 <sha> -- <paths>` walks back from <sha> until something
+      // matches the pathspec — `--no-walk` makes it return only <sha>, or
+      // nothing if <sha> doesn't match.
       const result = getCommitContextsBetweenShas(multiRepo.commits.merge300, multiRepo.commits.merge300, {
         includePaths: ["frontend/**"],
         cwd: multiRepo.cwd,
@@ -983,12 +982,11 @@ describe("merge commit handling", () => {
     });
   });
 
-  describe("getCommitContextsBetweenShas with release-branch workflow (LIN-69346)", () => {
-    // Mirrors the customer's first-sync scenario exactly: features are merged
-    // INTO a release branch (not main), then rel is merged into main as HEAD.
-    // With no prior release SHA on the pipeline, the CLI uses HEAD^1 as the
-    // implicit boundary — without that boundary, scanning HEAD alone would
-    // miss every issue key.
+  describe("getCommitContextsBetweenShas with release-branch workflow", () => {
+    // First sync (no prior release SHA) on a merge HEAD: scanning HEAD alone
+    // finds no keys because HEAD's branch is the rel branch, not any feature.
+    // Caller passes HEAD^1 as the boundary so the rel branch's contents are in
+    // range.
     let relRepo: TempRepoReleaseBranch;
 
     beforeAll(() => {

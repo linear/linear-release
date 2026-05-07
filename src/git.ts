@@ -123,10 +123,9 @@ export function extractBranchName(rawDecorations: string | undefined): string | 
 }
 
 /**
- * Returns `sha`'s parent SHAs (in order), or an empty array if the commit has
- * no reachable parents — root commit, unknown SHA, or shallow clone where the
- * parents aren't in the local repo. A merge commit has 2+ parents; a regular
- * commit has 1; the root commit has 0.
+ * Returns `sha`'s parent SHAs in order. Empty array if the commit has no
+ * reachable parents — root commit, unknown SHA, or shallow clone where the
+ * parents aren't in the local repo. Merges have 2+ entries.
  */
 export function getCommitParents(sha: string, cwd: string = process.cwd()): string[] {
   try {
@@ -273,18 +272,16 @@ function runLog(rangeArgs: string, cwd: string): CommitContext[] {
 /**
  * Returns commits between two SHAs, optionally filtered by file paths.
  *
- * When `includePaths` is set we pass `--full-history` to disable git's
- * default history simplification, which would otherwise drop merge commits
- * that are TREESAME to a parent within the paths — i.e. virtually every
- * GitHub merge, since the merge itself adds no new file changes. Dropping
- * them loses the issue keys encoded in `feature/LIN-XXX-...` branch names.
- * `--full-history` keeps every commit (merge or not) that contributed to
- * the path's history, including merges whose contribution arrived via a
- * non-first parent. See LIN-69346.
+ * `--full-history` (only when `includePaths` is set): a non-evil merge's
+ * tree equals one of its parents' trees, so under a pathspec it's TREESAME
+ * and git's default simplification drops it. That's true of every provider's
+ * merge commit (GitHub, GitLab MR, Bitbucket PR, plain `git merge --no-ff`)
+ * and would lose the issue keys encoded in their feature-branch names.
  *
- * For `fromSha === toSha` (first-time sync where there's no prior release),
- * we add `--no-walk` so git evaluates the requested commit directly instead
- * of walking back to the first ancestor matching the pathspec.
+ * `--no-walk` (only when `fromSha === toSha`): without it, `git log -1 <sha>
+ * -- <paths>` walks back from `<sha>` to the first ancestor matching the
+ * pathspec — silently returning an unrelated commit when `<sha>` itself
+ * doesn't match.
  *
  * @param fromSha - Starting commit SHA (exclusive)
  * @param toSha - Ending commit SHA (inclusive)
