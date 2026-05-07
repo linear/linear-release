@@ -15,6 +15,7 @@ import {
   getRepoInfo,
   normalizePathspec,
   parseRepoUrl,
+  resolveFirstSyncBoundary,
 } from "./git";
 
 describe("normalizePathspec", () => {
@@ -450,6 +451,29 @@ function runGit(command: string, cwd: string): string {
 }
 
 /**
+ * Initializes a tmpdir repo, configures user, creates the listed directories,
+ * lands a seed commit, and renames the branch to `main`. Returns the cwd and
+ * base SHA.
+ */
+function initTempRepo(opts: { prefix: string; dirs: string[]; seedFile: { path: string; content: string } }): {
+  cwd: string;
+  base: string;
+} {
+  const cwd = mkdtempSync(join(tmpdir(), opts.prefix));
+  runGit("init", cwd);
+  runGit('config user.email "test@example.com"', cwd);
+  runGit('config user.name "Test User"', cwd);
+  for (const dir of opts.dirs) {
+    mkdirSync(join(cwd, dir), { recursive: true });
+  }
+  writeFileSync(join(cwd, opts.seedFile.path), opts.seedFile.content);
+  runGit("add .", cwd);
+  runGit('commit -m "Initial"', cwd);
+  runGit("branch -M main", cwd);
+  return { cwd, base: runGit("rev-parse HEAD", cwd) };
+}
+
+/**
  * Cuts `branch` off `baseBranch`, lands one file change, merges back via
  * `--no-ff` with a GitHub-style PR-merge message, then deletes `branch` to
  * mirror a CI checkout (merged feature branches gone). Returns the merge SHA.
@@ -569,19 +593,11 @@ function createTempRepoWithMerge(): TempRepoWithMerge {
  * commit merged back as HEAD. `merge300` touches `infra/` only.
  */
 function createTempRepoWithMultipleMerges(): TempRepoWithMultipleMerges {
-  const cwd = mkdtempSync(join(tmpdir(), "linear-release-multi-merge-"));
-  runGit("init", cwd);
-  runGit('config user.email "test@example.com"', cwd);
-  runGit('config user.name "Test User"', cwd);
-
-  mkdirSync(join(cwd, "frontend"), { recursive: true });
-  mkdirSync(join(cwd, "backend"), { recursive: true });
-  mkdirSync(join(cwd, "infra"), { recursive: true });
-  writeFileSync(join(cwd, "frontend", "seed.txt"), "seed");
-  runGit("add .", cwd);
-  runGit('commit -m "Initial"', cwd);
-  runGit("branch -M main", cwd);
-  const base = runGit("rev-parse HEAD", cwd);
+  const { cwd, base } = initTempRepo({
+    prefix: "linear-release-multi-merge-",
+    dirs: ["frontend", "backend", "infra"],
+    seedFile: { path: "frontend/seed.txt", content: "seed" },
+  });
 
   const merge100 = mergeFeatureBranch({
     cwd,
@@ -625,19 +641,11 @@ function createTempRepoWithMultipleMerges(): TempRepoWithMultipleMerges {
  * only.
  */
 function createTempRepoReleaseBranch(): TempRepoReleaseBranch {
-  const cwd = mkdtempSync(join(tmpdir(), "linear-release-rel-branch-"));
-  runGit("init", cwd);
-  runGit('config user.email "test@example.com"', cwd);
-  runGit('config user.name "Test User"', cwd);
-
-  mkdirSync(join(cwd, "frontend-nuxt3"), { recursive: true });
-  mkdirSync(join(cwd, "backend"), { recursive: true });
-  mkdirSync(join(cwd, "mobile-android"), { recursive: true });
-  writeFileSync(join(cwd, "frontend-nuxt3", "seed.ts"), "seed");
-  runGit("add .", cwd);
-  runGit('commit -m "Initial"', cwd);
-  runGit("branch -M main", cwd);
-  const base = runGit("rev-parse HEAD", cwd);
+  const { cwd, base } = initTempRepo({
+    prefix: "linear-release-rel-branch-",
+    dirs: ["frontend-nuxt3", "backend", "mobile-android"],
+    seedFile: { path: "frontend-nuxt3/seed.ts", content: "seed" },
+  });
 
   runGit("checkout -b rel/2026-05-06 main", cwd);
   mergeFeatureBranch({
@@ -887,6 +895,22 @@ describe("merge commit handling", () => {
     });
   });
 
+  describe("resolveFirstSyncBoundary", () => {
+    it("expands to HEAD^1 when HEAD is a merge commit", () => {
+      expect(resolveFirstSyncBoundary(mergeRepo.commits.mergeCommit, mergeRepo.cwd)).toBe(mergeRepo.commits.base);
+    });
+
+    it("returns the commit itself when HEAD is a regular commit", () => {
+      expect(resolveFirstSyncBoundary(mergeRepo.commits.featureBranch, mergeRepo.cwd)).toBe(
+        mergeRepo.commits.featureBranch,
+      );
+    });
+
+    it("returns the commit itself when HEAD is the root commit", () => {
+      expect(resolveFirstSyncBoundary(mergeRepo.commits.base, mergeRepo.cwd)).toBe(mergeRepo.commits.base);
+    });
+  });
+
   describe("getCommitContextsBetweenShas with merge commits", () => {
     it("should include merge commit when path filtering would exclude it", () => {
       // The merge node itself adds no file changes, so default simplification
@@ -997,12 +1021,14 @@ describe("merge commit handling", () => {
       rmSync(relRepo.cwd, { recursive: true, force: true });
     });
 
-    it("should surface feature merges from inside the rel branch when scanning HEAD^1..HEAD", () => {
-      const parents = getCommitParents(relRepo.commits.headMerge, relRepo.cwd);
-      expect(parents.length).toBeGreaterThanOrEqual(1);
-      const parent = parents[0]!;
+    it("should surface feature merges from inside the rel branch when scanning the resolved first-sync boundary", () => {
+      // Mirrors the customer's first-sync flow: resolveFirstSyncBoundary picks
+      // HEAD^1 because HEAD is a merge, then getCommitContextsBetweenShas runs
+      // over that range.
+      const boundary = resolveFirstSyncBoundary(relRepo.commits.headMerge, relRepo.cwd);
+      expect(boundary).not.toBe(relRepo.commits.headMerge);
 
-      const result = getCommitContextsBetweenShas(parent, relRepo.commits.headMerge, {
+      const result = getCommitContextsBetweenShas(boundary, relRepo.commits.headMerge, {
         includePaths: ["frontend-nuxt3/**", "backend/**"],
         cwd: relRepo.cwd,
       });

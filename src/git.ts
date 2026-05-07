@@ -123,6 +123,19 @@ export function extractBranchName(rawDecorations: string | undefined): string | 
 }
 
 /**
+ * Implicit scan boundary for a first-time release sync (no prior release SHA).
+ * Expands a merge HEAD to its first parent so the merged-in branch's commits
+ * are in range — issue keys live there, not on the merge node itself.
+ */
+export function resolveFirstSyncBoundary(currentSha: string, cwd: string = process.cwd()): string {
+  const parents = getCommitParents(currentSha, cwd);
+  if (parents.length > 1 && parents[0]) {
+    return parents[0];
+  }
+  return currentSha;
+}
+
+/**
  * Returns `sha`'s parent SHAs in order. Empty array if the commit has no
  * reachable parents — root commit, unknown SHA, or shallow clone where the
  * parents aren't in the local repo. Merges have 2+ entries.

@@ -3,9 +3,9 @@ import {
   assertGitAvailable,
   ensureCommitAvailable,
   getCommitContextsBetweenShas,
-  getCommitParents,
   getCurrentGitInfo,
   getRepoInfo,
+  resolveFirstSyncBoundary,
 } from "./git";
 import { scanCommits } from "./scan";
 import {
@@ -350,16 +350,15 @@ async function getLatestSha(): Promise<string> {
     throw new Error("Could not get current commit");
   }
 
-  // Merge HEAD has no issue keys on itself — they live on HEAD^2's branch.
-  // Scanning HEAD^1..HEAD picks them up. Non-merge HEAD carries its own key,
-  // so HEAD-only stays correct.
-  const parents = getCommitParents(currentSha);
-  if (parents.length > 1 && parents[0]) {
-    verbose(`First sync on merge HEAD: using HEAD^1 (${parents[0]}) as the scan boundary`);
-    return parents[0];
+  // For a merge HEAD the issue keys live on HEAD^2's branch, not on HEAD
+  // itself, so HEAD-only would miss them. Non-merge HEAD carries its own key.
+  const boundary = resolveFirstSyncBoundary(currentSha);
+  if (boundary !== currentSha) {
+    verbose(`First sync on merge HEAD: using HEAD^1 (${boundary}) as the scan boundary`);
+  } else {
+    verbose("First sync: only inspecting current commit");
   }
-  verbose("First sync: only inspecting current commit");
-  return currentSha;
+  return boundary;
 }
 
 async function getPipelineSettings(): Promise<{
