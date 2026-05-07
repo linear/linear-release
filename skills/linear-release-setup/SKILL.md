@@ -33,6 +33,10 @@ Ask, in order:
    - **Continuous** — every deploy completes a release. Typical for nightlies, dogfood, and web apps that ship on merge.
    - **Scheduled** — releases collect changes over time and move through stages before shipping. Typical for versioned mobile and on-prem.
 
+   **The test:** does the team need to track a release before it ships — naming it, seeing what's queued in it, or moving it through phases (code freeze, QA, etc.)?
+   - Yes → **scheduled** (the release exists as an in-progress thing before it ships).
+   - No → **continuous** (the release is created at the moment of shipping).
+
 4. **For each scheduled pipeline, ask explicitly:**
    - **Branch model** — just `main`, or `main` + release branches (`release/*`)?
    - **Version source** — calendar (`2026.05`), semver (`1.2.0`), or commit SHA? Derived from branch name, CI variable, file, or git tag?
