@@ -597,6 +597,30 @@ describe("getCommitContextsBetweenShas", () => {
     expect(result[0]?.message).toBe("feat: add src file with extra spaces");
   });
 
+  it("should preserve newlines so extractors can distinguish title from body", () => {
+    // Standalone tempdir so the multiline body is independent of the shared fixture.
+    const cwd = mkdtempSync(join(tmpdir(), "linear-release-multiline-"));
+    try {
+      runGit("init", cwd);
+      runGit('config user.email "test@example.com"', cwd);
+      runGit('config user.name "Test User"', cwd);
+      writeFileSync(join(cwd, "file.txt"), "x");
+      runGit("add .", cwd);
+      runGit('commit -m "Add feature (#100)" -m "Closes LIN-200" -m "Co-authored-by: Other <other@example.com>"', cwd);
+      const sha = runGit("rev-parse HEAD", cwd);
+
+      const result = getCommitContextsBetweenShas(sha, sha, { cwd });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.message).toBe(
+        "Add feature (#100)\n\nCloses LIN-200\n\nCo-authored-by: Other <other@example.com>",
+      );
+      // First line is the actual title (not the entire flattened body)
+      expect(result[0]!.message!.split("\n")[0]).toBe("Add feature (#100)");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("should return empty array when no commits in range", () => {
     // third..first is empty because first is an ancestor of third
     const result = getCommitContextsBetweenShas(repo.commits.third, repo.commits.first, {
