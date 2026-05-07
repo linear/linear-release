@@ -29,6 +29,45 @@ const ISSUE_IDENTIFIER_REGEX = new RegExp(
 
 const LINEAR_ISSUE_URL_REGEX = /https?:\/\/linear\.app\/[\w-]+\/issue\/(\w{1,7}-[0-9]{1,9})(?:\/[\w-]*)*/gi;
 
+/**
+ * `git merge --squash` followed by `git commit` writes a body containing this
+ * header and then dumps the full message of every commit pulled in via the
+ * squash — including upstream history merged into the feature branch via
+ * `git merge`. Issue / PR references inside that dump describe branch history,
+ * not the change being squashed, so they must not feed release association.
+ *
+ * We excise *only* the dump itself: any real subject the developer prepended
+ * and any footer they appended (e.g. `Closes LIN-X`, `Co-authored-by: …`) are
+ * preserved. The dump is bounded by recognizable structural lines (`commit
+ * <sha>`, `Author:`, `Date:`, `Merge:`, blank lines, and indented body
+ * content); the first non-indented, non-empty line that doesn't match those
+ * patterns marks the start of user-authored footer content.
+ */
+const SQUASH_BLOCK_MARKER = /^Squashed commit of the following:/i;
+const SQUASH_COMMIT_HEADER = /^commit [0-9a-f]{7,40}\b/i;
+const SQUASH_METADATA_HEADER = /^(?:Author|AuthorDate|Commit|CommitDate|Date|Merge):\s/i;
+
+function stripSquashBlock(message: string): string {
+  const lines = message.split(/\r?\n/);
+  const markerIdx = lines.findIndex((l) => SQUASH_BLOCK_MARKER.test(l));
+  if (markerIdx === -1) return message;
+
+  let i = markerIdx + 1;
+  for (; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (line === "") continue;
+    if (/^[ \t]/.test(line)) continue;
+    if (SQUASH_COMMIT_HEADER.test(line)) continue;
+    if (SQUASH_METADATA_HEADER.test(line)) continue;
+    break;
+  }
+
+  const before = lines.slice(0, markerIdx).join("\n").trimEnd();
+  const after = lines.slice(i).join("\n").trim();
+  if (before && after) return `${before}\n\n${after}`;
+  return before || after;
+}
+
 function normalizeLinearUrls(text: string): string {
   return text.replace(LINEAR_ISSUE_URL_REGEX, "$1");
 }
@@ -174,8 +213,10 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): E
     }
   }
 
-  // Commit message: only extract when preceded by a magic word
-  const message = commit.message ?? "";
+  // Commit message: only extract when preceded by a magic word.
+  // Strip any squashed sub-commit dump first so references that came from
+  // already-merged branch history don't get re-attributed to this commit.
+  const message = stripSquashBlock(commit.message ?? "");
   if (message.length > 0) {
     for (const match of matchMagicWordIdentifiers(message)) {
       if (!found.has(match.identifier)) {
@@ -192,11 +233,11 @@ export function extractPullRequestNumbersForCommit(commit: CommitContext): numbe
     return [];
   }
 
-  const message = commit.message ?? "";
+  const rawMessage = commit.message ?? "";
 
   // Skip reverts - they reference the original PR, not a new one
-  if (/^Revert "/i.test(message)) {
-    verbose(`Skipping revert commit ${commit.sha} with message: "${message}"`);
+  if (/^Revert "/i.test(rawMessage)) {
+    verbose(`Skipping revert commit ${commit.sha} with message: "${rawMessage}"`);
     return [];
   }
 
@@ -206,6 +247,11 @@ export function extractPullRequestNumbersForCommit(commit: CommitContext): numbe
     verbose(`Skipping revert merge commit ${commit.sha}`);
     return [];
   }
+
+  // Drop nested squash sub-commit dumps before scanning so `(#NNN)` references
+  // from already-shipped commits pulled in via `git merge` don't get attributed
+  // to this commit's release.
+  const message = stripSquashBlock(rawMessage);
 
   const prNumbers: number[] = [];
   const pushIfValid = (raw: string, source: string): void => {
@@ -233,10 +279,13 @@ export function extractPullRequestNumbersForCommit(commit: CommitContext): numbe
     pushIfValid(mergeMatch[1]!, "merge format");
   }
 
-  // Only use fallback if no matches from squash/merge formats
+  // Fallback for non-canonical merge titles (e.g. a direct push that put the PR
+  // number somewhere other than the trailing parens). Restrict to the title line
+  // — scanning the body would re-pick up cross-references like "builds on #85"
+  // and stale references inside squashed-in sub-commit history.
   if (prNumbers.length === 0) {
-    for (const match of message.matchAll(/#(\d+)/g)) {
-      pushIfValid(match[1]!, "message scan");
+    for (const match of title.matchAll(/#(\d+)/g)) {
+      pushIfValid(match[1]!, "title scan");
     }
   }
 
@@ -311,7 +360,8 @@ export function extractRevertedIssueIdentifiersForCommit(commit: CommitContext):
   // Use magic-word gating on the inner message, same as the add path, to avoid
   // false positives from generic word-number tokens (e.g. "Bump v1-2 to v1-3").
   if (messageDepth % 2 === 1) {
-    for (const match of matchMagicWordIdentifiers(innerMessage)) {
+    const innerStripped = stripSquashBlock(innerMessage);
+    for (const match of matchMagicWordIdentifiers(innerStripped)) {
       if (!found.has(match.identifier)) {
         found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
       }

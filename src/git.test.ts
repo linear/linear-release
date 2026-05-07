@@ -588,13 +588,12 @@ describe("getCommitContextsBetweenShas", () => {
     expect(result[0]?.sha).toBe(repo.commits.first);
   });
 
-  it("should normalize commit message whitespace", () => {
+  it("should collapse horizontal whitespace but preserve newlines", () => {
     const result = getCommitContextsBetweenShas(repo.commits.first, repo.commits.first, {
       cwd: repo.cwd,
     });
     expect(result).toHaveLength(1);
-    // The first commit has "feat: add src file  with  extra  spaces" - multiple spaces should be normalized
-    expect(result[0]?.message).not.toMatch(/\s{2,}/);
+    // Multiple spaces in the subject should be collapsed
     expect(result[0]?.message).toBe("feat: add src file with extra spaces");
   });
 
