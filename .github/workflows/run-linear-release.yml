@@ -8,11 +8,11 @@ on:
         required: true
         type: string
       name:
-        description: "Release name (used by complete)"
+        description: "Release name"
         required: false
         type: string
       version:
-        description: "Release version (used by complete)"
+        description: "Release version"
         required: false
         type: string
 
@@ -26,11 +26,11 @@ on:
           - sync
           - complete
       name:
-        description: "Release name (used by complete)"
+        description: "Release name"
         required: false
         type: string
       version:
-        description: "Release version (used by complete)"
+        description: "Release version"
         required: false
         type: string
 
@@ -55,9 +55,18 @@ jobs:
       - name: Sync issues
         env:
           LINEAR_ACCESS_KEY: ${{ secrets.LINEAR_RELEASE_MANAGEMENT_ACCESS_KEY }}
+          RELEASE_NAME: ${{ inputs.name }}
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
           chmod +x linear-release
-          ./linear-release sync
+          args=()
+          if [ -n "$RELEASE_NAME" ]; then
+            args+=("--name=$RELEASE_NAME")
+          fi
+          if [ -n "$RELEASE_VERSION" ]; then
+            args+=("--release-version=$RELEASE_VERSION")
+          fi
+          ./linear-release sync "${args[@]}"
 
   complete:
     name: Complete release
