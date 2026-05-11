@@ -9,9 +9,9 @@ export type Release = {
 };
 
 // Access key endpoint response types
-export type AccessKeyLatestReleaseResponse = {
+export type AccessKeyRecentReleasesResponse = {
   data: {
-    latestReleaseByAccessKey: Release | null;
+    recentReleasesByAccessKey: Release[];
   };
 };
 

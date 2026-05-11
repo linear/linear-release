@@ -1,17 +1,20 @@
 import { LinearClient, LinearClientOptions } from "@linear/sdk";
 import {
   assertGitAvailable,
+  commitExists,
   ensureCommitAvailable,
   getCommitContextsBetweenShas,
   getCurrentGitInfo,
   getRepoInfo,
+  isAncestor,
   resolveFirstSyncBoundary,
 } from "./git";
+import { findBaseSha } from "./base-sha";
 import { scanCommits } from "./scan";
 import {
   Release,
-  AccessKeyLatestReleaseResponse,
   AccessKeyPipelineSettingsResponse,
+  AccessKeyRecentReleasesResponse,
   AccessKeySyncReleaseResponse,
   AccessKeyCompleteReleaseResponse,
   AccessKeyUpdateByPipelineResponse,
@@ -316,11 +319,14 @@ async function updateCommand(): Promise<{
     : null;
 }
 
-async function getLatestRelease(): Promise<Release | null> {
-  const response = await apiRequest<AccessKeyLatestReleaseResponse>(
+async function getRecentReleases(): Promise<Release[]> {
+  // Pin the limit explicitly rather than relying on the server default — the
+  // walk's correctness depends on the right ancestor being in this page, so
+  // the cap is a meaningful contract, not an implementation detail.
+  const response = await apiRequest<AccessKeyRecentReleasesResponse>(
     `
-    query latestReleaseByAccessKey {
-      latestReleaseByAccessKey {
+    query recentReleasesByAccessKey($limit: Int) {
+      recentReleasesByAccessKey(limit: $limit) {
         id
         name
         createdAt
@@ -328,35 +334,48 @@ async function getLatestRelease(): Promise<Release | null> {
       }
     }
   `,
+    { limit: 20 },
   );
 
-  return response.data.latestReleaseByAccessKey;
+  return response.data.recentReleasesByAccessKey;
 }
 
 async function getLatestSha(): Promise<string> {
-  const latestRelease = await getLatestRelease();
-  const latestSha = latestRelease?.commitSha;
-  if (latestSha) {
-    return latestSha;
-  }
-
-  if (!latestRelease) {
-    verbose("Could not find latest release, assuming it's the first release");
-  } else if (!latestRelease.commitSha) {
-    verbose("Latest release has no commit SHA");
-  }
-  const currentSha = await getCurrentGitInfo().commit;
+  const currentSha = getCurrentGitInfo().commit;
   if (!currentSha) {
     throw new Error("Could not get current commit");
   }
 
+  const candidates = await getRecentReleases();
+  const result = findBaseSha(candidates, currentSha, { isAncestor, commitExists, ensureCommitAvailable });
+  if (result.kind === "found") {
+    return result.sha;
+  }
+
+  if (candidates.length === 0) {
+    verbose("No recent releases found; assuming first sync");
+  } else {
+    // The candidate list came back non-empty but no entry is reachable from
+    // HEAD. This usually means orphaned/stale commitShas, but can also mean
+    // the actual previous release is older than the recent-releases page —
+    // in which case we'll silently under-cover. Surface it at warn level so
+    // it's visible in CI logs.
+    // Don't promise "current commit only" here — the actual fallback is
+    // resolveFirstSyncBoundary, which uses HEAD^1 when HEAD is a merge commit.
+    // The follow-up verbose lines below print the boundary that was chosen.
+    warn(
+      `No recent release is an ancestor of ${currentSha} (${candidates.length} candidate${
+        candidates.length === 1 ? "" : "s"
+      } considered); falling back to the first-sync scan boundary`,
+    );
+  }
   // For a merge HEAD the issue keys live on HEAD^2's branch, not on HEAD
   // itself, so HEAD-only would miss them. Non-merge HEAD carries its own key.
   const boundary = resolveFirstSyncBoundary(currentSha);
   if (boundary !== currentSha) {
-    verbose(`First sync on merge HEAD: using HEAD^1 (${boundary}) as the scan boundary`);
+    verbose(`Merge HEAD: using HEAD^1 (${boundary}) as the scan boundary`);
   } else {
-    verbose("First sync: only inspecting current commit");
+    verbose("Inspecting current commit only");
   }
   return boundary;
 }

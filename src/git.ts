@@ -165,6 +165,25 @@ export function commitExists(sha: string, cwd: string = process.cwd()): boolean 
   }
 }
 
+/**
+ * True iff `sha` is reachable by walking parents from `headSha`.
+ *
+ * Used to verify that a candidate base SHA is actually on HEAD's history before
+ * we hand it to `git log <base>..<HEAD>` — a candidate from a side branch (e.g.
+ * a hotfix release) will scan a wrong range otherwise.
+ */
+export function isAncestor(sha: string, headSha: string, cwd: string = process.cwd()): boolean {
+  try {
+    execSync(`git merge-base --is-ancestor ${sha} ${headSha}`, {
+      cwd,
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
 
 /**

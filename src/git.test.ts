@@ -13,6 +13,7 @@ import {
   getCommitContextsBetweenShas,
   getCommitParents,
   getRepoInfo,
+  isAncestor,
   normalizePathspec,
   parseRepoUrl,
   resolveFirstSyncBoundary,
@@ -908,6 +909,29 @@ describe("merge commit handling", () => {
 
     it("returns the commit itself when HEAD is the root commit", () => {
       expect(resolveFirstSyncBoundary(mergeRepo.commits.base, mergeRepo.cwd)).toBe(mergeRepo.commits.base);
+    });
+  });
+
+  describe("isAncestor", () => {
+    it("returns true when sha is an ancestor of headSha", () => {
+      expect(isAncestor(mergeRepo.commits.base, mergeRepo.commits.mergeCommit, mergeRepo.cwd)).toBe(true);
+    });
+
+    it("returns true for a sha equal to headSha", () => {
+      expect(isAncestor(mergeRepo.commits.mergeCommit, mergeRepo.commits.mergeCommit, mergeRepo.cwd)).toBe(true);
+    });
+
+    it("returns false when sha is not on headSha's history", () => {
+      // featureBranch is reachable from mergeCommit (parent #2), but mergeCommit
+      // is not reachable from featureBranch — that's the asymmetric case the
+      // walk relies on to skip side-branch candidates.
+      expect(isAncestor(mergeRepo.commits.mergeCommit, mergeRepo.commits.featureBranch, mergeRepo.cwd)).toBe(false);
+    });
+
+    it("returns false for an unknown sha", () => {
+      expect(isAncestor("0000000000000000000000000000000000000000", mergeRepo.commits.mergeCommit, mergeRepo.cwd)).toBe(
+        false,
+      );
     });
   });
 
