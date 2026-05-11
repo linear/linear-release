@@ -168,9 +168,19 @@ jobs:
           draft: false
           prerelease: false
 
+  label-release:
+    name: Label release with version
+    needs: release
+    uses: ./.github/workflows/run-linear-release.yml
+    with:
+      action: sync
+      name: Release ${{ needs.release.outputs.version_number }}
+      version: ${{ needs.release.outputs.tag_name }}
+    secrets: inherit
+
   complete-release:
     name: Complete release
-    needs: release
+    needs: label-release
     uses: ./.github/workflows/run-linear-release.yml
     with:
       action: complete

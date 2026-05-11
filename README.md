@@ -162,13 +162,13 @@ linear-release update --stage="in review" --name="Release 1.2.0"
 
 ### Command Targeting
 
-| Command    | With `--release-version`                                       | Without `--release-version`                                                                                                                                                                                               |
-| ---------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sync`     | Targets matching version or creates a release for that version | Continuous pipelines create a release with short SHA name/version. Scheduled pipelines use the currently started release, or move the latest planned release to started automatically if no started release can be found. |
-| `update`   | Updates that exact release version                             | Updates latest started release, or latest planned release if no started release exists                                                                                                                                    |
-| `complete` | Completes that exact release version                           | Completes latest started release                                                                                                                                                                                          |
+| Command    | With `--release-version`                                                                                   | Without `--release-version`                                                                                                                                                                                               |
+| ---------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sync`     | Targets matching version, labels an unversioned started release, or creates a new release for that version | Continuous pipelines create a release with short SHA name/version. Scheduled pipelines use the currently started release, or move the latest planned release to started automatically if no started release can be found. |
+| `update`   | Updates that exact release version                                                                         | Updates latest started release, or latest planned release if no started release exists                                                                                                                                    |
+| `complete` | Completes that exact release version                                                                       | Completes latest started release                                                                                                                                                                                          |
 
-For scheduled pipelines, prefer always passing `--release-version` in CI, especially when releases overlap.
+For scheduled pipelines, prefer always passing `--release-version` in CI, especially when releases overlap. Only `sync` sets the version on a release — `complete` and `update` strictly look up by version. If your CI has no natural labeling moment (e.g. tag-driven releases), run `sync --release-version=X` immediately before `complete --release-version=X` at release time.
 
 ### JSON Output
 
