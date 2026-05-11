@@ -23,7 +23,7 @@ import {
   RepoInfo,
 } from "./types";
 import { getCLIWarnings, parseCLIArgs } from "./args";
-import { error, info, setLogLevel, setStderr, verbose, warn } from "./log";
+import { error, info, setJsonMode, setLogLevel, setStderr, verbose, warn } from "./log";
 import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
 import { withRetry } from "./retry";
@@ -53,8 +53,8 @@ Options:
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
   --timeout=<seconds>        Abort if the operation exceeds this duration (default: 60)
-  --json                     Output result as JSON
-  --quiet                    Only print errors
+  --json                     Output result as JSON (logs emitted as JSON Lines on stderr)
+  --quiet                    Suppress info-level output (warnings and errors still printed)
   --verbose                  Print detailed progress including debug diagnostics
   -v, --version              Show version number
   -h, --help                 Show this help message
@@ -75,16 +75,16 @@ Examples:
 const accessKey: string = process.env.LINEAR_ACCESS_KEY || "";
 
 if (!accessKey) {
-  console.error("Error: LINEAR_ACCESS_KEY environment variable must be set");
+  error("LINEAR_ACCESS_KEY environment variable must be set");
   process.exit(1);
 }
 
 let parsedArgs: ReturnType<typeof parseCLIArgs>;
 try {
   parsedArgs = parseCLIArgs(process.argv.slice(2));
-} catch (error) {
-  console.error(`Error: ${error instanceof Error ? error.message : error}`);
-  console.error("Run linear-release --help for usage information.");
+} catch (err) {
+  const message = err instanceof Error ? err.message : String(err);
+  error(`${message} (run linear-release --help for usage)`);
   process.exit(1);
 }
 const { command, releaseName, releaseVersion, stageName, includePaths, jsonOutput, timeoutSeconds, logLevel } =
@@ -93,9 +93,15 @@ const cliWarnings = getCLIWarnings(parsedArgs);
 setLogLevel(logLevel);
 if (jsonOutput) {
   setStderr(true);
+  setJsonMode(true);
+}
+
+function formatVersion(release: { version?: string } | null | undefined): string {
+  return release?.version ? `version: ${release.version}` : "no version set";
 }
 
 const logEnvironmentSummary = () => {
+  info(`linear-release v${CLI_VERSION}`);
   if (releaseName) {
     info(`Using custom release name: ${releaseName}`);
   }
@@ -103,10 +109,8 @@ const logEnvironmentSummary = () => {
     info(`Using custom release version: ${releaseVersion}`);
   }
   for (const w of cliWarnings) {
-    warn(`Warning: ${w}`);
+    warn(w);
   }
-
-  verbose(`Running in ${process.env.NODE_ENV === "development" ? "development" : "production"} mode`);
 };
 
 const getDevApiUrl = () => {
@@ -192,7 +196,7 @@ async function syncCommand(): Promise<{
     }
   } else {
     info(
-      `Found ${commits.length} ${pluralize(commits.length, "commit")} between ${latestSha} and ${currentCommit.commit}`,
+      `Found ${commits.length} ${pluralize(commits.length, "commit")} between ${latestSha.slice(0, 7)} and ${currentCommit.commit.slice(0, 7)}`,
     );
   }
 
@@ -214,12 +218,6 @@ async function syncCommand(): Promise<{
 
   verbose(`Debug sink: ${JSON.stringify(debugSink, null, 2)}`);
 
-  if (issueReferences.length === 0) {
-    info("No issue keys found");
-  } else {
-    info(`Retrieved issue keys: ${issueReferences.map((f) => f.identifier).join(", ")}`);
-  }
-
   if (revertedIssueReferences.length > 0) {
     info(`Reverted issue keys: ${revertedIssueReferences.map((f) => f.identifier).join(", ")}`);
   }
@@ -227,13 +225,12 @@ async function syncCommand(): Promise<{
   const repoInfo = getRepoInfo();
 
   const release = await syncRelease(issueReferences, revertedIssueReferences, prNumbers, repoInfo, debugSink);
-  info(
-    `Issues [${issueReferences.map((f) => f.identifier).join(", ")}] and pull requests [${prNumbers.join(
-      ", ",
-    )}] have been added to release ${release.name}`,
-  );
-
-  info("Finished");
+  const issueIds = issueReferences.map((f) => f.identifier);
+  const parts: string[] = [];
+  if (issueIds.length > 0) parts.push(`issues [${issueIds.join(", ")}]`);
+  if (prNumbers.length > 0) parts.push(`pull requests [${prNumbers.map((n) => `#${n}`).join(", ")}]`);
+  const attached = parts.length > 0 ? parts.join(", ") : "no new issues or pull requests";
+  info(`Synced to release ${release.name} (${formatVersion(release)}): ${attached}`);
 
   return {
     release: {
@@ -259,12 +256,10 @@ async function completeCommand(): Promise<{
     commitSha,
   });
   if (result.success) {
-    info(`Completed release ${result.release?.name ?? "(unknown)"}`);
+    info(`Completed release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)})`);
   } else {
     throw new Error("Failed to complete release");
   }
-
-  info("Finished");
 
   return result.release
     ? {
@@ -300,12 +295,12 @@ async function updateCommand(): Promise<{
   }
 
   if (result.success) {
-    info(`Updated release "${result.release?.name}" to stage "${result.release?.stageName}"`);
+    info(
+      `Updated release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)}) to stage ${result.release?.stageName}`,
+    );
   } else {
     throw new Error("Failed to update release");
   }
-
-  info("Finished");
 
   return result.release
     ? {
@@ -575,8 +570,7 @@ async function main() {
       result = await updateCommand();
       break;
     default:
-      error(`Unknown command: ${command}`);
-      error("Available commands: sync, complete, update");
+      error(`Unknown command "${command}" (available: sync, complete, update)`);
       process.exit(1);
   }
 
