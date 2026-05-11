@@ -11,10 +11,11 @@ import {
   extractBranchNameFromMergeMessage,
   getCommitContext,
   getCommitContextsBetweenShas,
+  getCommitParents,
   getRepoInfo,
-  isMergeCommit,
   normalizePathspec,
   parseRepoUrl,
+  resolveFirstSyncBoundary,
 } from "./git";
 
 describe("normalizePathspec", () => {
@@ -422,12 +423,78 @@ type TempRepoWithMerge = {
   };
 };
 
+type TempRepoWithMultipleMerges = {
+  cwd: string;
+  commits: {
+    base: string;
+    merge100: string; // Merge of feature/LIN-100 (touches frontend/)
+    merge200: string; // Merge of feature/LIN-200 (touches backend/)
+    merge300: string; // Merge of feature/LIN-300 (touches infra/ — outside includePaths)
+    headMerge: string; // Merge of release branch into main
+  };
+};
+
+type TempRepoReleaseBranch = {
+  cwd: string;
+  commits: {
+    base: string;
+    headMerge: string; // The rel-branch → main merge (HEAD)
+  };
+};
+
 function runGit(command: string, cwd: string): string {
   return execSync(`git ${command}`, {
     cwd,
     stdio: ["ignore", "pipe", "ignore"],
     encoding: "utf8",
   }).trim();
+}
+
+/**
+ * Initializes a tmpdir repo, configures user, creates the listed directories,
+ * lands a seed commit, and renames the branch to `main`. Returns the cwd and
+ * base SHA.
+ */
+function initTempRepo(opts: { prefix: string; dirs: string[]; seedFile: { path: string; content: string } }): {
+  cwd: string;
+  base: string;
+} {
+  const cwd = mkdtempSync(join(tmpdir(), opts.prefix));
+  runGit("init", cwd);
+  runGit('config user.email "test@example.com"', cwd);
+  runGit('config user.name "Test User"', cwd);
+  for (const dir of opts.dirs) {
+    mkdirSync(join(cwd, dir), { recursive: true });
+  }
+  writeFileSync(join(cwd, opts.seedFile.path), opts.seedFile.content);
+  runGit("add .", cwd);
+  runGit('commit -m "Initial"', cwd);
+  runGit("branch -M main", cwd);
+  return { cwd, base: runGit("rev-parse HEAD", cwd) };
+}
+
+/**
+ * Cuts `branch` off `baseBranch`, lands one file change, merges back via
+ * `--no-ff` with a GitHub-style PR-merge message, then deletes `branch` to
+ * mirror a CI checkout (merged feature branches gone). Returns the merge SHA.
+ */
+function mergeFeatureBranch(opts: {
+  cwd: string;
+  baseBranch: string;
+  branch: string;
+  file: string;
+  prNumber: number;
+}): string {
+  const { cwd, baseBranch, branch, file, prNumber } = opts;
+  runGit(`checkout -b ${branch} ${baseBranch}`, cwd);
+  writeFileSync(join(cwd, file), "x");
+  runGit("add .", cwd);
+  runGit(`commit -m "feature work on ${branch}"`, cwd);
+  runGit(`checkout ${baseBranch}`, cwd);
+  runGit(`merge --no-ff ${branch} -m "Merge pull request #${prNumber} from owner/${branch}"`, cwd);
+  const sha = runGit("rev-parse HEAD", cwd);
+  runGit(`branch -D ${branch}`, cwd);
+  return sha;
 }
 
 /**
@@ -519,6 +586,96 @@ function createTempRepoWithMerge(): TempRepoWithMerge {
   const mergeCommit = runGit("rev-parse HEAD", cwd);
 
   return { cwd, commits: { base, featureBranch, mergeCommit } };
+}
+
+/**
+ * Three feature branches merged into main, then a release branch with one
+ * commit merged back as HEAD. `merge300` touches `infra/` only.
+ */
+function createTempRepoWithMultipleMerges(): TempRepoWithMultipleMerges {
+  const { cwd, base } = initTempRepo({
+    prefix: "linear-release-multi-merge-",
+    dirs: ["frontend", "backend", "infra"],
+    seedFile: { path: "frontend/seed.txt", content: "seed" },
+  });
+
+  const merge100 = mergeFeatureBranch({
+    cwd,
+    baseBranch: "main",
+    branch: "feature/LIN-100-add-foo",
+    file: "frontend/foo.txt",
+    prNumber: 100,
+  });
+  const merge200 = mergeFeatureBranch({
+    cwd,
+    baseBranch: "main",
+    branch: "feature/LIN-200-fix-bar",
+    file: "backend/bar.txt",
+    prNumber: 200,
+  });
+  const merge300 = mergeFeatureBranch({
+    cwd,
+    baseBranch: "main",
+    branch: "feature/LIN-300-infra",
+    file: "infra/three.txt",
+    prNumber: 300,
+  });
+
+  // rel branch needs at least one of its own commits, otherwise --no-ff is a
+  // no-op when the branches are identical.
+  runGit("checkout -b rel/2026-05-06 main", cwd);
+  writeFileSync(join(cwd, "frontend", "release-notes.txt"), "notes");
+  runGit("add .", cwd);
+  runGit('commit -m "release notes"', cwd);
+  runGit("checkout main", cwd);
+  runGit('merge --no-ff rel/2026-05-06 -m "Merge pull request #324 from owner/rel/2026-05-06"', cwd);
+  const headMerge = runGit("rev-parse HEAD", cwd);
+  runGit("branch -D rel/2026-05-06", cwd);
+
+  return { cwd, commits: { base, merge100, merge200, merge300, headMerge } };
+}
+
+/**
+ * Release-branch workflow: features merged INTO `rel/2026-05-06`, then rel
+ * merged into main as HEAD. `feature/LIN-300-mobile` touches `mobile-android/`
+ * only.
+ */
+function createTempRepoReleaseBranch(): TempRepoReleaseBranch {
+  const { cwd, base } = initTempRepo({
+    prefix: "linear-release-rel-branch-",
+    dirs: ["frontend-nuxt3", "backend", "mobile-android"],
+    seedFile: { path: "frontend-nuxt3/seed.ts", content: "seed" },
+  });
+
+  runGit("checkout -b rel/2026-05-06 main", cwd);
+  mergeFeatureBranch({
+    cwd,
+    baseBranch: "rel/2026-05-06",
+    branch: "feature/LIN-100-foo",
+    file: "frontend-nuxt3/foo.ts",
+    prNumber: 100,
+  });
+  mergeFeatureBranch({
+    cwd,
+    baseBranch: "rel/2026-05-06",
+    branch: "feature/LIN-200-bar",
+    file: "backend/bar.ts",
+    prNumber: 200,
+  });
+  mergeFeatureBranch({
+    cwd,
+    baseBranch: "rel/2026-05-06",
+    branch: "feature/LIN-300-mobile",
+    file: "mobile-android/m.kt",
+    prNumber: 300,
+  });
+
+  runGit("checkout main", cwd);
+  runGit('merge --no-ff rel/2026-05-06 -m "Merge pull request #324 from owner/rel/2026-05-06"', cwd);
+  const headMerge = runGit("rev-parse HEAD", cwd);
+  runGit("branch -D rel/2026-05-06", cwd);
+
+  return { cwd, commits: { base, headMerge } };
 }
 
 describe("getCommitContextsBetweenShas", () => {
@@ -652,8 +809,9 @@ describe("getCommitContextsBetweenShas", () => {
     try {
       process.chdir(join(repo.cwd, "src"));
 
-      // Without the fix, this would fail because git would look for "src/**" relative to
-      // the subdirectory (i.e., src/src/**) which doesn't exist
+      // The `:(top,...)` magic prefix in buildPathspecArgs anchors the glob
+      // at the repo root regardless of cwd; without it git would resolve
+      // "src/**" against the subdirectory (i.e., src/src/**).
       const result = getCommitContextsBetweenShas(
         repo.commits.first,
         repo.commits.third,
@@ -697,21 +855,6 @@ describe("merge commit handling", () => {
     rmSync(mergeRepo.cwd, { recursive: true, force: true });
   });
 
-  describe("isMergeCommit", () => {
-    it("should return true for a merge commit", () => {
-      expect(isMergeCommit(mergeRepo.commits.mergeCommit, mergeRepo.cwd)).toBe(true);
-    });
-
-    it("should return false for a regular commit", () => {
-      expect(isMergeCommit(mergeRepo.commits.featureBranch, mergeRepo.cwd)).toBe(false);
-      expect(isMergeCommit(mergeRepo.commits.base, mergeRepo.cwd)).toBe(false);
-    });
-
-    it("should return false for invalid SHA", () => {
-      expect(isMergeCommit("invalid-sha", mergeRepo.cwd)).toBe(false);
-    });
-  });
-
   describe("getCommitContext", () => {
     it("should return commit context for a valid SHA", () => {
       const context = getCommitContext(mergeRepo.commits.mergeCommit, mergeRepo.cwd);
@@ -733,17 +876,52 @@ describe("merge commit handling", () => {
     });
   });
 
+  describe("getCommitParents", () => {
+    it("returns 2 parents for a merge commit", () => {
+      const parents = getCommitParents(mergeRepo.commits.mergeCommit, mergeRepo.cwd);
+      expect(parents).toEqual([mergeRepo.commits.base, mergeRepo.commits.featureBranch]);
+    });
+
+    it("returns 1 parent for a regular commit", () => {
+      expect(getCommitParents(mergeRepo.commits.featureBranch, mergeRepo.cwd)).toEqual([mergeRepo.commits.base]);
+    });
+
+    it("returns [] for the root commit", () => {
+      expect(getCommitParents(mergeRepo.commits.base, mergeRepo.cwd)).toEqual([]);
+    });
+
+    it("returns [] for an unknown SHA", () => {
+      expect(getCommitParents("0000000000000000000000000000000000000000", mergeRepo.cwd)).toEqual([]);
+    });
+  });
+
+  describe("resolveFirstSyncBoundary", () => {
+    it("expands to HEAD^1 when HEAD is a merge commit", () => {
+      expect(resolveFirstSyncBoundary(mergeRepo.commits.mergeCommit, mergeRepo.cwd)).toBe(mergeRepo.commits.base);
+    });
+
+    it("returns the commit itself when HEAD is a regular commit", () => {
+      expect(resolveFirstSyncBoundary(mergeRepo.commits.featureBranch, mergeRepo.cwd)).toBe(
+        mergeRepo.commits.featureBranch,
+      );
+    });
+
+    it("returns the commit itself when HEAD is the root commit", () => {
+      expect(resolveFirstSyncBoundary(mergeRepo.commits.base, mergeRepo.cwd)).toBe(mergeRepo.commits.base);
+    });
+  });
+
   describe("getCommitContextsBetweenShas with merge commits", () => {
     it("should include merge commit when path filtering would exclude it", () => {
-      // Without the fix, path filtering for "src/**" would only return the feature branch commit
-      // because merge commits don't have direct file changes.
-      // With the fix, the merge commit should be included for metadata extraction.
+      // The merge node itself adds no file changes, so default simplification
+      // would drop it; `--full-history` keeps it for metadata (PR number,
+      // branch name) extraction.
       const result = getCommitContextsBetweenShas(mergeRepo.commits.base, mergeRepo.commits.mergeCommit, {
         includePaths: ["src/**"],
         cwd: mergeRepo.cwd,
       });
 
-      // Should include both: the merge commit (for metadata) and the feature commit (for file changes)
+      // Both the merge (for metadata) and the feature commit (for file changes).
       expect(result.length).toBeGreaterThanOrEqual(2);
 
       // The merge commit should be first (unshifted)
@@ -766,6 +944,101 @@ describe("merge commit handling", () => {
       // Count occurrences of merge commit
       const mergeCommitCount = result.filter((c) => c.sha === mergeRepo.commits.mergeCommit).length;
       expect(mergeCommitCount).toBe(1);
+    });
+  });
+
+  describe("getCommitContextsBetweenShas with multiple merges in range", () => {
+    let multiRepo: TempRepoWithMultipleMerges;
+
+    beforeAll(() => {
+      multiRepo = createTempRepoWithMultipleMerges();
+    });
+
+    afterAll(() => {
+      rmSync(multiRepo.cwd, { recursive: true, force: true });
+    });
+
+    it("should return in-path merges and drop out-of-path merges across a multi-merge range", () => {
+      // `--full-history` keeps merges whose contribution arrived via a non-
+      // first parent. Their tree equals one parent's, so default simplification
+      // would drop them — and with them the issue keys in their branch names.
+      const result = getCommitContextsBetweenShas(multiRepo.commits.base, multiRepo.commits.headMerge, {
+        includePaths: ["frontend/**", "backend/**"],
+        cwd: multiRepo.cwd,
+      });
+
+      const shas = new Set(result.map((c) => c.sha));
+      expect(shas.has(multiRepo.commits.merge100)).toBe(true);
+      expect(shas.has(multiRepo.commits.merge200)).toBe(true);
+      // merge300 only touched infra/ — kept by the merges-only scan, then dropped
+      // by commitTouchesPaths so LIN-300 doesn't leak into a frontend release.
+      expect(shas.has(multiRepo.commits.merge300)).toBe(false);
+      expect(shas.has(multiRepo.commits.headMerge)).toBe(true);
+
+      const branchNames = result.map((c) => c.branchName).filter((b): b is string => !!b);
+      expect(branchNames).toEqual(
+        expect.arrayContaining(["feature/LIN-100-add-foo", "feature/LIN-200-fix-bar", "rel/2026-05-06"]),
+      );
+      expect(branchNames).not.toContain("feature/LIN-300-infra");
+    });
+
+    it("should return HEAD merge commit when fromSha === toSha and HEAD is a merge", () => {
+      const result = getCommitContextsBetweenShas(multiRepo.commits.headMerge, multiRepo.commits.headMerge, {
+        includePaths: ["frontend/**", "backend/**"],
+        cwd: multiRepo.cwd,
+      });
+
+      const headResult = result.find((c) => c.sha === multiRepo.commits.headMerge);
+      expect(headResult).toBeDefined();
+      expect(headResult?.branchName).toBe("rel/2026-05-06");
+    });
+
+    it("should not drift to an unrelated ancestor when fromSha === toSha and HEAD is outside includePaths", () => {
+      // `git log -1 <sha> -- <paths>` walks back from <sha> until something
+      // matches the pathspec — `--no-walk` makes it return only <sha>, or
+      // nothing if <sha> doesn't match.
+      const result = getCommitContextsBetweenShas(multiRepo.commits.merge300, multiRepo.commits.merge300, {
+        includePaths: ["frontend/**"],
+        cwd: multiRepo.cwd,
+      });
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe("getCommitContextsBetweenShas with release-branch workflow", () => {
+    // First sync (no prior release SHA) on a merge HEAD: scanning HEAD alone
+    // finds no keys because HEAD's branch is the rel branch, not any feature.
+    // Caller passes HEAD^1 as the boundary so the rel branch's contents are in
+    // range.
+    let relRepo: TempRepoReleaseBranch;
+
+    beforeAll(() => {
+      relRepo = createTempRepoReleaseBranch();
+    });
+
+    afterAll(() => {
+      rmSync(relRepo.cwd, { recursive: true, force: true });
+    });
+
+    it("should surface feature merges from inside the rel branch when scanning the resolved first-sync boundary", () => {
+      // Mirrors the customer's first-sync flow: resolveFirstSyncBoundary picks
+      // HEAD^1 because HEAD is a merge, then getCommitContextsBetweenShas runs
+      // over that range.
+      const boundary = resolveFirstSyncBoundary(relRepo.commits.headMerge, relRepo.cwd);
+      expect(boundary).not.toBe(relRepo.commits.headMerge);
+
+      const result = getCommitContextsBetweenShas(boundary, relRepo.commits.headMerge, {
+        includePaths: ["frontend-nuxt3/**", "backend/**"],
+        cwd: relRepo.cwd,
+      });
+
+      const branchNames = result.map((c) => c.branchName).filter((b): b is string => !!b);
+      expect(branchNames).toEqual(
+        expect.arrayContaining(["feature/LIN-100-foo", "feature/LIN-200-bar", "rel/2026-05-06"]),
+      );
+      // LIN-300 is mobile-only — outside the path filter — must not leak.
+      expect(branchNames).not.toContain("feature/LIN-300-mobile");
     });
   });
 });

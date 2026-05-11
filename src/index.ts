@@ -5,6 +5,7 @@ import {
   getCommitContextsBetweenShas,
   getCurrentGitInfo,
   getRepoInfo,
+  resolveFirstSyncBoundary,
 } from "./git";
 import { scanCommits } from "./scan";
 import {
@@ -339,17 +340,25 @@ async function getLatestSha(): Promise<string> {
     return latestSha;
   }
 
-  // If we can't find a release or the latest release has no commit SHA, we will only inspect the current commit
   if (!latestRelease) {
-    verbose("Could not find latest release, assuming it's the first release, will only inspect the current commit");
+    verbose("Could not find latest release, assuming it's the first release");
   } else if (!latestRelease.commitSha) {
-    verbose("Latest release has no commit SHA, will only inspect the current commit");
+    verbose("Latest release has no commit SHA");
   }
   const currentSha = await getCurrentGitInfo().commit;
   if (!currentSha) {
     throw new Error("Could not get current commit");
   }
-  return currentSha;
+
+  // For a merge HEAD the issue keys live on HEAD^2's branch, not on HEAD
+  // itself, so HEAD-only would miss them. Non-merge HEAD carries its own key.
+  const boundary = resolveFirstSyncBoundary(currentSha);
+  if (boundary !== currentSha) {
+    verbose(`First sync on merge HEAD: using HEAD^1 (${boundary}) as the scan boundary`);
+  } else {
+    verbose("First sync: only inspecting current commit");
+  }
+  return boundary;
 }
 
 async function getPipelineSettings(): Promise<{
