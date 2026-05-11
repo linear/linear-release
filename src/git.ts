@@ -232,14 +232,14 @@ function parseCommitChunk(chunk: string): CommitContext {
  */
 export function getCommitContext(sha: string, cwd: string = process.cwd()): CommitContext | null {
   if (!SHA_PATTERN.test(sha)) {
-    warn(`getCommitContext: Invalid SHA format "${sha}"`);
+    warn(`Invalid commit SHA format "${sha}"`);
     return null;
   }
   try {
     return runLog(`-1 ${sha}`, cwd)[0] ?? null;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    warn(`getCommitContext: Failed to get context for ${sha}: ${message}`);
+    warn(`Failed to read commit ${sha.slice(0, 7)}: ${message}`);
     return null;
   }
 }
@@ -328,11 +328,11 @@ export function getCommitContextsBetweenShas(
   const { includePaths = null, cwd = process.cwd() } = options;
 
   if (!SHA_PATTERN.test(fromSha)) {
-    warn(`getCommitContextsBetweenShas: Invalid fromSha format "${fromSha}"`);
+    warn(`Invalid "from" SHA format "${fromSha}"`);
     return [];
   }
   if (!SHA_PATTERN.test(toSha)) {
-    warn(`getCommitContextsBetweenShas: Invalid toSha format "${toSha}"`);
+    warn(`Invalid "to" SHA format "${toSha}"`);
     return [];
   }
 
@@ -347,7 +347,7 @@ export function getCommitContextsBetweenShas(
 
   if (commits.length === 0) {
     verbose(
-      `getCommitContextsBetweenShas: No commits found between ${fromSha}..${toSha}` +
+      `No commits found between ${fromSha.slice(0, 7)}..${toSha.slice(0, 7)}` +
         (includePaths?.length ? ` with paths: ${includePaths.join(", ")}` : ""),
     );
   }
@@ -416,7 +416,7 @@ export function getRepoInfo(remote: string = "origin", cwd: string = process.cwd
 
     return parseRepoUrl(url);
   } catch (error) {
-    logError(`Error getting repo info: ${error}`);
+    logError(`Failed to read repo info: ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
 }

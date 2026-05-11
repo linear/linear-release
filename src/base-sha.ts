@@ -22,7 +22,7 @@ export function findBaseSha(candidates: Release[], headSha: string, deps: FindBa
   for (const candidate of candidates) {
     const sha = candidate.commitSha;
     if (!sha) {
-      verbose(`findBaseSha: skipping ${candidate.name}: no commitSha`);
+      verbose(`Skipping base SHA candidate "${candidate.name}": no commit SHA`);
       continue;
     }
     if (!deps.commitExists(sha)) {
@@ -30,15 +30,17 @@ export function findBaseSha(candidates: Release[], headSha: string, deps: FindBa
         deps.ensureCommitAvailable(sha);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        verbose(`findBaseSha: skipping ${candidate.name} (${sha}): ${message}`);
+        verbose(`Skipping base SHA candidate "${candidate.name}" (${sha.slice(0, 7)}): ${message}`);
         continue;
       }
     }
     if (!deps.isAncestor(sha, headSha)) {
-      verbose(`findBaseSha: skipping ${candidate.name} (${sha}): not an ancestor of ${headSha}`);
+      verbose(
+        `Skipping base SHA candidate "${candidate.name}" (${sha.slice(0, 7)}): not an ancestor of ${headSha.slice(0, 7)}`,
+      );
       continue;
     }
-    verbose(`findBaseSha: using ${candidate.name} (${sha})`);
+    verbose(`Using base SHA from release "${candidate.name}" (${sha.slice(0, 7)})`);
     return { kind: "found", sha };
   }
   return { kind: "fallback" };
