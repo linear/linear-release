@@ -180,7 +180,7 @@ jobs:
 
   complete-release:
     name: Complete release
-    needs: label-release
+    needs: [release, label-release]
     uses: ./.github/workflows/run-linear-release.yml
     with:
       action: complete
