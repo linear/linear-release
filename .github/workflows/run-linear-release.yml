@@ -7,6 +7,14 @@ on:
         description: "Action to perform"
         required: true
         type: string
+      name:
+        description: "Release name (used by complete)"
+        required: false
+        type: string
+      version:
+        description: "Release version (used by complete)"
+        required: false
+        type: string
 
   workflow_dispatch:
     inputs:
@@ -17,6 +25,14 @@ on:
         options:
           - sync
           - complete
+      name:
+        description: "Release name (used by complete)"
+        required: false
+        type: string
+      version:
+        description: "Release version (used by complete)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -60,6 +76,15 @@ jobs:
       - name: Complete release
         env:
           LINEAR_ACCESS_KEY: ${{ secrets.LINEAR_RELEASE_MANAGEMENT_ACCESS_KEY }}
+          RELEASE_NAME: ${{ inputs.name }}
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
           chmod +x linear-release
-          ./linear-release complete
+          args=()
+          if [ -n "$RELEASE_NAME" ]; then
+            args+=("--name=$RELEASE_NAME")
+          fi
+          if [ -n "$RELEASE_VERSION" ]; then
+            args+=("--release-version=$RELEASE_VERSION")
+          fi
+          ./linear-release complete "${args[@]}"
