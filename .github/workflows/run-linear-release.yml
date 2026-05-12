@@ -15,6 +15,9 @@ on:
         description: "Release version"
         required: false
         type: string
+    secrets:
+      LINEAR_RELEASE_MANAGEMENT_ACCESS_KEY:
+        required: true
 
   workflow_dispatch:
     inputs:
@@ -43,9 +46,10 @@ jobs:
     if: inputs.action == 'sync'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Download CLI
         env:
@@ -73,9 +77,10 @@ jobs:
     if: inputs.action == 'complete'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Download CLI
         env:
