@@ -149,17 +149,17 @@ linear-release update --stage="in review" --name="Release 1.2.0"
 
 ### CLI Options
 
-| Option                    | Commands                     | Description                                                                                                                                                                                                                                                          |
-| ------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--name`                  | `sync`, `complete`, `update` | Custom release name. For `sync`, the value is applied to the targeted release — both newly created releases and existing ones get the provided name. For `complete` and `update`, sets the name on the targeted release.                                             |
-| `--release-version`       | `sync`, `complete`, `update` | Release version identifier. For `sync`, defaults to short commit hash. For `complete` and `update`, selects an existing release with that version (errors if none exists); does not change a release's version. If omitted, targets the most recent started release. |
-| `--stage`                 | `update`                     | Target deployment stage (required for `update`)                                                                                                                                                                                                                      |
-| `--include-paths`         | `sync`                       | Filter commits by changed file paths                                                                                                                                                                                                                                 |
-| `--commit-prefix-pattern` | `sync`                       | Regex with one capture group around the issue ID, applied per line of the commit message. Anchor with `^` to match once per line; omit `^` to match every occurrence per line. Detects IDs from conventions like `[LIN-123] My title` that don't use magic words.    |
-| `--json`                  | `sync`, `complete`, `update` | Output result as JSON on stdout. Logs are emitted as JSON Lines (one object per line) on stderr.                                                                                                                                                                     |
-| `--quiet`                 | `sync`, `complete`, `update` | Suppress info-level output. Warnings and errors are still printed.                                                                                                                                                                                                   |
-| `--verbose`               | `sync`, `complete`, `update` | Print detailed progress including debug diagnostics                                                                                                                                                                                                                  |
-| `--timeout`               | `sync`, `complete`, `update` | Max duration in seconds before aborting (default: 60)                                                                                                                                                                                                                |
+| Option               | Commands                     | Description                                                                                                                                                                                                                                                          |
+| -------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--name`             | `sync`, `complete`, `update` | Custom release name. For `sync`, the value is applied to the targeted release — both newly created releases and existing ones get the provided name. For `complete` and `update`, sets the name on the targeted release.                                             |
+| `--release-version`  | `sync`, `complete`, `update` | Release version identifier. For `sync`, defaults to short commit hash. For `complete` and `update`, selects an existing release with that version (errors if none exists); does not change a release's version. If omitted, targets the most recent started release. |
+| `--stage`            | `update`                     | Target deployment stage (required for `update`)                                                                                                                                                                                                                      |
+| `--include-paths`    | `sync`                       | Filter commits by changed file paths                                                                                                                                                                                                                                 |
+| `--issue-id-pattern` | `sync`                       | Regex with one capture group around the issue ID, applied per line of the commit message. Anchor with `^` to match once per line; omit `^` to match every occurrence per line. Detects IDs from conventions like `[LIN-123] My title` that don't use magic words.    |
+| `--json`             | `sync`, `complete`, `update` | Output result as JSON on stdout. Logs are emitted as JSON Lines (one object per line) on stderr.                                                                                                                                                                     |
+| `--quiet`            | `sync`, `complete`, `update` | Suppress info-level output. Warnings and errors are still printed.                                                                                                                                                                                                   |
+| `--verbose`          | `sync`, `complete`, `update` | Print detailed progress including debug diagnostics                                                                                                                                                                                                                  |
+| `--timeout`          | `sync`, `complete`, `update` | Max duration in seconds before aborting (default: 60)                                                                                                                                                                                                                |
 
 ### Command Targeting
 
@@ -212,22 +212,22 @@ Path patterns can also be configured in your pipeline settings in Linear. If bot
 
 ### Issue Detection
 
-By default, issue IDs are picked up from branch names (e.g. `feat/ENG-123-add-feature`) and from commit messages preceded by a "magic word" like `Fixes ENG-123` or `Closes ENG-123`. Use `--commit-prefix-pattern` to add a regex-driven detection path that fits your team's commit convention.
+By default, issue IDs are picked up from branch names (e.g. `feat/ENG-123-add-feature`) and from commit messages preceded by a "magic word" like `Fixes ENG-123` or `Closes ENG-123`. Use `--issue-id-pattern` to add a regex-driven detection path that fits your team's commit convention.
 
-**`--commit-prefix-pattern=<regex>`** detects issue IDs from a regex applied to each line of the commit message. The first capture group must wrap the ID, and every occurrence on a line is matched. Useful for PR-title conventions that don't include a magic word.
+**`--issue-id-pattern=<regex>`** detects issue IDs from a regex applied to each line of the commit message. The first capture group must wrap the ID, and every occurrence on a line is matched. Useful for PR-title conventions that don't include a magic word.
 
 ```bash
 # Bracketed prefix anchored to line start: [LIN-123] My PR title
-linear-release sync --commit-prefix-pattern='^\[(.+?)\]'
+linear-release sync --issue-id-pattern='^\[(.+?)\]'
 
 # Unanchored: catches multi-bracket titles like [LIN-1] [LIN-2] thing
-linear-release sync --commit-prefix-pattern='\[(.+?)\]'
+linear-release sync --issue-id-pattern='\[(.+?)\]'
 
 # Parenthesised prefix: (LIN-1): My PR title
-linear-release sync --commit-prefix-pattern='^\((.+?)\):'
+linear-release sync --issue-id-pattern='^\((.+?)\):'
 
 # Colon-suffixed line-start ID: LIN-1: My PR title
-linear-release sync --commit-prefix-pattern='^(\w{1,7}-[0-9]{1,9}):'
+linear-release sync --issue-id-pattern='^(\w{1,7}-[0-9]{1,9}):'
 ```
 
 Anchored patterns (with `^`) match at most once per line; unanchored patterns find every occurrence. The pattern composes with the default magic-word detection — both run, and their results are unioned. Brackets in body prose like Markdown link references `[Release notes]` capture but contribute nothing because their contents don't match the `<KEY>-<NUMBER>` shape.

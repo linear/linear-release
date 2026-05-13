@@ -132,9 +132,9 @@ describe("scanCommits", () => {
   describe("extraction options", () => {
     const bracketed = /^\[(.+?)\]/;
 
-    it("propagates commitPrefixPattern through to the extractor", () => {
+    it("propagates issueIdPattern through to the extractor", () => {
       const commits: CommitContext[] = [{ sha: "a1", message: "[LIN-1] do the thing" }];
-      const result = scanCommits(commits, null, { commitPrefixPattern: bracketed });
+      const result = scanCommits(commits, null, { issueIdPattern: bracketed });
       expect(ids(result.issueReferences)).toEqual(["LIN-1"]);
     });
 
@@ -143,7 +143,7 @@ describe("scanCommits", () => {
         { sha: "a1", message: "[LIN-1] add the thing" },
         { sha: "r1", message: 'Revert "[LIN-1] add the thing"' },
       ];
-      const result = scanCommits(commits, null, { commitPrefixPattern: bracketed });
+      const result = scanCommits(commits, null, { issueIdPattern: bracketed });
       expect(ids(result.issueReferences)).toEqual([]);
       expect(ids(result.revertedIssueReferences)).toEqual(["LIN-1"]);
     });

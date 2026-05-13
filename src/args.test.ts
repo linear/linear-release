@@ -146,39 +146,39 @@ describe("parseCLIArgs", () => {
     expect(() => parseCLIArgs(["--quiet", "--verbose"])).toThrow("Conflicting log level flags");
   });
 
-  it("defaults --commit-prefix-pattern to undefined", () => {
+  it("defaults --issue-id-pattern to undefined", () => {
     const result = parseCLIArgs([]);
-    expect(result.commitPrefixPattern).toBeUndefined();
+    expect(result.issueIdPattern).toBeUndefined();
   });
 
-  it("parses --commit-prefix-pattern into a RegExp", () => {
-    const result = parseCLIArgs(["--commit-prefix-pattern=^\\[(.+?)\\]"]);
-    expect(result.commitPrefixPattern).toBeInstanceOf(RegExp);
-    expect(result.commitPrefixPattern!.test("[LIN-1] foo")).toBe(true);
+  it("parses --issue-id-pattern into a RegExp", () => {
+    const result = parseCLIArgs(["--issue-id-pattern=^\\[(.+?)\\]"]);
+    expect(result.issueIdPattern).toBeInstanceOf(RegExp);
+    expect(result.issueIdPattern!.test("[LIN-1] foo")).toBe(true);
   });
 
-  it("throws on invalid --commit-prefix-pattern regex", () => {
-    expect(() => parseCLIArgs(["--commit-prefix-pattern=["])).toThrow("Invalid --commit-prefix-pattern");
+  it("throws on invalid --issue-id-pattern regex", () => {
+    expect(() => parseCLIArgs(["--issue-id-pattern=["])).toThrow("Invalid --issue-id-pattern");
   });
 
-  it("throws on --commit-prefix-pattern with no capture group", () => {
-    expect(() => parseCLIArgs(["--commit-prefix-pattern=^\\[.+?\\]"])).toThrow("exactly one capture group");
+  it("throws on --issue-id-pattern with no capture group", () => {
+    expect(() => parseCLIArgs(["--issue-id-pattern=^\\[.+?\\]"])).toThrow("exactly one capture group");
   });
 
-  it("throws on --commit-prefix-pattern with multiple capture groups", () => {
-    expect(() => parseCLIArgs(["--commit-prefix-pattern=^(\\[)(.+?)\\]"])).toThrow("exactly one capture group");
+  it("throws on --issue-id-pattern with multiple capture groups", () => {
+    expect(() => parseCLIArgs(["--issue-id-pattern=^(\\[)(.+?)\\]"])).toThrow("exactly one capture group");
   });
 
-  it("treats --commit-prefix-pattern='' as absent", () => {
-    const result = parseCLIArgs(["--commit-prefix-pattern="]);
-    expect(result.commitPrefixPattern).toBeUndefined();
+  it("treats --issue-id-pattern='' as absent", () => {
+    const result = parseCLIArgs(["--issue-id-pattern="]);
+    expect(result.issueIdPattern).toBeUndefined();
   });
 
-  it("rejects --commit-prefix-pattern passed as /source/flags literal", () => {
-    expect(() => parseCLIArgs(["--commit-prefix-pattern=/^\\[(.+?)\\]/i"])).toThrow("pass the pattern source directly");
+  it("rejects --issue-id-pattern passed as /source/flags literal", () => {
+    expect(() => parseCLIArgs(["--issue-id-pattern=/^\\[(.+?)\\]/i"])).toThrow("pass the pattern source directly");
   });
 
-  it("rejects --commit-prefix-pattern passed as /source/ literal with no flags", () => {
-    expect(() => parseCLIArgs(["--commit-prefix-pattern=/^\\[(.+?)\\]/"])).toThrow("pass the pattern source directly");
+  it("rejects --issue-id-pattern passed as /source/ literal with no flags", () => {
+    expect(() => parseCLIArgs(["--issue-id-pattern=/^\\[(.+?)\\]/"])).toThrow("pass the pattern source directly");
   });
 });

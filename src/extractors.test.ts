@@ -57,7 +57,7 @@ describe("extractLinearIssueIdentifiersForCommit", () => {
       message: "[LIN-1] title\n\nFixes LIN-1",
     };
 
-    const result = extractLinearIssueIdentifiersForCommit(commit, { commitPrefixPattern: /^\[(.+?)\]/ });
+    const result = extractLinearIssueIdentifiersForCommit(commit, { issueIdPattern: /^\[(.+?)\]/ });
 
     expect(ids(result)).toEqual(["LIN-1"]);
   });
@@ -69,7 +69,7 @@ describe("extractLinearIssueIdentifiersForCommit", () => {
       message: "[LIN-1] title\n\nFixes LIN-1",
     };
 
-    const result = extractLinearIssueIdentifiersForCommit(commit, { commitPrefixPattern: /^\[(.+?)\]/ });
+    const result = extractLinearIssueIdentifiersForCommit(commit, { issueIdPattern: /^\[(.+?)\]/ });
 
     expect(ids(result)).toEqual(["LIN-1"]);
   });
@@ -738,7 +738,7 @@ describe("extractPullRequestNumbersForCommit", () => {
   });
 });
 
-describe("commit prefix pattern option", () => {
+describe("issue id pattern option", () => {
   const bracketed = /^\[(.+?)\]/;
 
   it("does not detect prefix-style identifiers without an option", () => {
@@ -784,7 +784,7 @@ describe("commit prefix pattern option", () => {
   ])("pattern %s on message %j yields %j", (pattern, message, expected) => {
     const result = extractLinearIssueIdentifiersForCommit(
       { sha: "abc", branchName: null, message },
-      { commitPrefixPattern: pattern },
+      { issueIdPattern: pattern },
     );
 
     expect(ids(result).sort()).toEqual(expected.sort());
@@ -793,7 +793,7 @@ describe("commit prefix pattern option", () => {
   it("rejects leading-zero identifiers in the prefix capture", () => {
     const result = extractLinearIssueIdentifiersForCommit(
       { sha: "abc", branchName: null, message: "[LIN-0004] zero" },
-      { commitPrefixPattern: bracketed },
+      { issueIdPattern: bracketed },
     );
 
     expect(ids(result)).toEqual([]);
@@ -806,7 +806,7 @@ describe("commit prefix pattern option", () => {
     const withGlobalFlag = /\[(.+?)\]/g;
     const result = extractLinearIssueIdentifiersForCommit(
       { sha: "abc", branchName: null, message: "[LIN-1] [LIN-2] [LIN-3] foo" },
-      { commitPrefixPattern: withGlobalFlag },
+      { issueIdPattern: withGlobalFlag },
     );
 
     expect(ids(result).sort()).toEqual(["LIN-1", "LIN-2", "LIN-3"]);
@@ -820,7 +820,7 @@ describe("commit prefix pattern option", () => {
     const caseInsensitive = /^\[(LIN-\d+)\]/i;
     const result = extractLinearIssueIdentifiersForCommit(
       { sha: "abc", branchName: null, message: "[lin-42] lowercase team key" },
-      { commitPrefixPattern: caseInsensitive },
+      { issueIdPattern: caseInsensitive },
     );
 
     expect(ids(result)).toEqual(["LIN-42"]);
@@ -829,7 +829,7 @@ describe("commit prefix pattern option", () => {
   it("combines with default magic-word detection", () => {
     const result = extractLinearIssueIdentifiersForCommit(
       { sha: "abc", branchName: null, message: "[LIN-1] title\n\nFixes LIN-2" },
-      { commitPrefixPattern: bracketed },
+      { issueIdPattern: bracketed },
     );
 
     expect(ids(result).sort()).toEqual(["LIN-1", "LIN-2"]);
@@ -838,7 +838,7 @@ describe("commit prefix pattern option", () => {
   it("matches the prefix on any line of the message", () => {
     const result = extractLinearIssueIdentifiersForCommit(
       { sha: "abc", branchName: null, message: "feat: do thing\n\n[LIN-999] follow-up note" },
-      { commitPrefixPattern: bracketed },
+      { issueIdPattern: bracketed },
     );
 
     expect(ids(result)).toEqual(["LIN-999"]);
@@ -855,7 +855,7 @@ commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 `;
     const result = extractLinearIssueIdentifiersForCommit(
       { sha: "abc", branchName: null, message },
-      { commitPrefixPattern: bracketed },
+      { issueIdPattern: bracketed },
     );
 
     expect(ids(result)).toEqual(["LIN-100"]);
@@ -864,7 +864,7 @@ commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   it("detects the prefix on a reverted inner title", () => {
     const result = extractRevertedIssueIdentifiersForCommit(
       { sha: "abc", branchName: null, message: 'Revert "[LIN-1] title"' },
-      { commitPrefixPattern: bracketed },
+      { issueIdPattern: bracketed },
     );
 
     expect(ids(result)).toEqual(["LIN-1"]);

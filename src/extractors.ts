@@ -198,7 +198,7 @@ export type ExtractionOptions = {
    * leading-zero IDs). Anchor with `^` to match once per line. The `g` flag
    * is forced and `y` is dropped internally. Example: `^\[(.+?)\]`.
    */
-  commitPrefixPattern?: RegExp;
+  issueIdPattern?: RegExp;
 };
 
 /**
@@ -210,7 +210,7 @@ export type ExtractionOptions = {
  * per line. Squashed sub-commit dumps are already removed by `stripSquashBlock`
  * before this runs.
  */
-function matchCommitPrefixIdentifiers(text: string, pattern: RegExp): IdentifierMatch[] {
+function matchIssueIdPattern(text: string, pattern: RegExp): IdentifierMatch[] {
   // Force `g` (and drop `y`) so `matchAll` iterates every occurrence per line.
   const flags = pattern.flags.replace(/[gy]/g, "") + "g";
   const regex = new RegExp(pattern.source, flags);
@@ -265,8 +265,8 @@ export function extractLinearIssueIdentifiersForCommit(
         found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
       }
     }
-    if (options.commitPrefixPattern) {
-      for (const match of matchCommitPrefixIdentifiers(message, options.commitPrefixPattern)) {
+    if (options.issueIdPattern) {
+      for (const match of matchIssueIdPattern(message, options.issueIdPattern)) {
         if (!found.has(match.identifier)) {
           found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
         }
@@ -437,8 +437,8 @@ export function extractRevertedIssueIdentifiersForCommit(
         found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
       }
     }
-    if (options.commitPrefixPattern) {
-      for (const match of matchCommitPrefixIdentifiers(innerStripped, options.commitPrefixPattern)) {
+    if (options.issueIdPattern) {
+      for (const match of matchIssueIdPattern(innerStripped, options.issueIdPattern)) {
         if (!found.has(match.identifier)) {
           found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
         }
