@@ -5,11 +5,16 @@ const MAX_KEY_LENGTH = 7;
 
 /**
  * Linear's API types `pullRequestReferences[].number` as a GraphQL `Int`
- * (signed 32-bit). A `#NNN` token whose value exceeds this cannot be a real
- * GitHub PR number and would cause the entire release sync to be rejected,
- * so we filter such tokens out at extraction time.
+ * (signed 32-bit). A token whose value exceeds this cannot be a real PR/MR
+ * number and would cause the entire release sync to be rejected, so we filter
+ * such tokens out at extraction time.
  */
 const MAX_PR_NUMBER = 2_147_483_647;
+
+const GITHUB_SQUASH_RE = /\(#(\d+)\)$/;
+const GITHUB_MERGE_RE = /^Merge pull request #(\d+)/i;
+const GITHUB_TITLE_SCAN_RE = /#(\d+)/g;
+const GITLAB_MR_TRAILER_RE = /^See merge request [\w./-]+!(\d+)\b/gim;
 
 /**
  * Regex for matching issue identifiers with proper word boundaries.
@@ -228,21 +233,34 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): E
   return Array.from(found.values());
 }
 
+type PrMatch = { number: number; source: string };
+
+/**
+ * Extract pull/merge request numbers referenced by a single commit's message.
+ *
+ * Recognized formats:
+ * - GitHub squash: `Title (#N)` on the title line
+ * - GitHub merge: `Merge pull request #N from ...` at the start of the message
+ * - GitLab: a `See merge request <group>/<project>!N` trailer (emitted by the
+ *   default merge commit template whenever a merge commit is created — i.e.
+ *   merge_method = merge or rebase_merge, squash on or off)
+ *
+ * Not captured (we cannot recover the number from the message alone):
+ * - GitLab merge_method = ff (no merge commit, no trailer; the source commit
+ *   lands verbatim on the target branch)
+ * - Projects with custom merge commit templates that strip these formats
+ * - Direct pushes whose commit message follows none of the above conventions
+ */
 export function extractPullRequestNumbersForCommit(commit: CommitContext): number[] {
-  if (!commit) {
-    return [];
-  }
+  if (!commit) return [];
 
   const rawMessage = commit.message ?? "";
 
-  // Skip reverts - they reference the original PR, not a new one
+  // Reverts reference the original PR, not a new one.
   if (/^Revert "/i.test(rawMessage)) {
     verbose(`Skipping revert commit ${commit.sha} with message: "${rawMessage}"`);
     return [];
   }
-
-  // Revert merge commits reference the original PR number, not a new one.
-  // Even depth (revert-of-revert) falls through to normal extraction.
   if (getRevertBranchDepth(commit.branchName) % 2 === 1) {
     verbose(`Skipping revert merge commit ${commit.sha}`);
     return [];
@@ -253,43 +271,49 @@ export function extractPullRequestNumbersForCommit(commit: CommitContext): numbe
   // to this commit's release.
   const message = stripSquashBlock(rawMessage);
 
-  const prNumbers: number[] = [];
-  const pushIfValid = (raw: string, source: string): void => {
-    const number = Number.parseInt(raw, 10);
+  const valid: number[] = [];
+  for (const { number, source } of [...extractGithubPrNumbers(message), ...extractGitlabMrNumbers(message)]) {
     if (number > MAX_PR_NUMBER) {
       verbose(
-        `Ignoring #${raw} in commit ${commit.sha} (${source}): exceeds max PR number ${MAX_PR_NUMBER}, likely not a GitHub PR reference`,
+        `Ignoring #${number} in commit ${commit.sha} (${source}): exceeds max PR number ${MAX_PR_NUMBER}, not a valid reference`,
       );
-      return;
+      continue;
     }
     verbose(`Found PR number ${number} in commit ${commit.sha} (${source}): "${message}"`);
-    prNumbers.push(number);
-  };
+    valid.push(number);
+  }
+  return [...new Set(valid)];
+}
 
-  // GitHub squash: "Title (#123)" - must be at end of title (first line)
+function extractGithubPrNumbers(message: string): PrMatch[] {
+  const matches: PrMatch[] = [];
   const title = message.split(/\r?\n/)[0] ?? "";
-  const squashMatch = title.match(/\(#(\d+)\)$/);
-  if (squashMatch) {
-    pushIfValid(squashMatch[1]!, "squash format");
-  }
 
-  // GitHub merge: "Merge pull request #123 from ..." - must be at start
-  const mergeMatch = message.match(/^Merge pull request #(\d+)/i);
-  if (mergeMatch) {
-    pushIfValid(mergeMatch[1]!, "merge format");
-  }
+  const squash = title.match(GITHUB_SQUASH_RE);
+  if (squash) matches.push({ number: Number.parseInt(squash[1]!, 10), source: "github squash" });
+
+  const merge = message.match(GITHUB_MERGE_RE);
+  if (merge) matches.push({ number: Number.parseInt(merge[1]!, 10), source: "github merge" });
 
   // Fallback for non-canonical merge titles (e.g. a direct push that put the PR
-  // number somewhere other than the trailing parens). Restrict to the title line
-  // — scanning the body would re-pick up cross-references like "builds on #85"
+  // number somewhere other than the trailing parens). Restrict to the title —
+  // scanning the body would re-pick up cross-references like "builds on #85"
   // and stale references inside squashed-in sub-commit history.
-  if (prNumbers.length === 0) {
-    for (const match of title.matchAll(/#(\d+)/g)) {
-      pushIfValid(match[1]!, "title scan");
+  if (matches.length === 0) {
+    for (const m of title.matchAll(GITHUB_TITLE_SCAN_RE)) {
+      matches.push({ number: Number.parseInt(m[1]!, 10), source: "github title scan" });
     }
   }
 
-  return [...new Set(prNumbers)];
+  return matches;
+}
+
+function extractGitlabMrNumbers(message: string): PrMatch[] {
+  // Line-anchored so we don't pick up `!N` references elsewhere in the body.
+  return [...message.matchAll(GITLAB_MR_TRAILER_RE)].map((m) => ({
+    number: Number.parseInt(m[1]!, 10),
+    source: "gitlab merge request trailer",
+  }));
 }
 
 function parseRevertBranch(branchName: string): {
