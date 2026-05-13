@@ -10,6 +10,7 @@ export type ParsedCLIArgs = {
   jsonOutput: boolean;
   timeoutSeconds: number;
   logLevel: LogLevel;
+  commitPrefixPattern?: RegExp;
 };
 
 export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
@@ -24,6 +25,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
       timeout: { type: "string" },
       quiet: { type: "boolean", default: false },
       verbose: { type: "boolean", default: false },
+      "commit-prefix-pattern": { type: "string" },
     },
     allowPositionals: true,
     strict: true,
@@ -47,6 +49,32 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
   if (values.quiet) logLevel = LogLevel.Quiet;
   else if (values.verbose) logLevel = LogLevel.Verbose;
 
+  let commitPrefixPattern: RegExp | undefined;
+  const rawPattern = values["commit-prefix-pattern"];
+  if (rawPattern !== undefined && rawPattern.length > 0) {
+    // Reject `/source/flags` literal-regex syntax: `new RegExp("/foo/i")` would
+    // silently match the text `/foo/i`, not what the user meant. The value is
+    // always treated as the pattern source; flags can't be configured.
+    if (/^\/.+\/[gimsuy]*$/.test(rawPattern)) {
+      throw new Error(
+        `Invalid --commit-prefix-pattern: pass the pattern source directly (e.g. '^\\[(.+?)\\]'), ` +
+          `not as a /.../flags literal. Flags inside the value are not supported.`,
+      );
+    }
+    try {
+      commitPrefixPattern = new RegExp(rawPattern);
+    } catch (error) {
+      throw new Error(`Invalid --commit-prefix-pattern: ${(error as Error).message}`);
+    }
+    const groupCount = countCaptureGroups(commitPrefixPattern);
+    if (groupCount !== 1) {
+      throw new Error(
+        `Invalid --commit-prefix-pattern: expected exactly one capture group, found ${groupCount}. ` +
+          `Example: '^\\[(.+?)\\]' to detect '[LIN-123] My title'.`,
+      );
+    }
+  }
+
   return {
     command: positionals[0] || "sync",
     releaseName: values.name,
@@ -61,7 +89,19 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
     jsonOutput: values.json ?? false,
     timeoutSeconds,
     logLevel,
+    commitPrefixPattern,
   };
+}
+
+/**
+ * Count the capture groups in a regex by appending an empty alternative — the
+ * resulting match against "" returns `groupCount + 1` elements.
+ */
+function countCaptureGroups(re: RegExp): number {
+  // Append `|` so the empty string always matches; `exec` then returns one
+  // entry per capture group plus the full match.
+  const probe = new RegExp(`${re.source}|`);
+  return probe.exec("")!.length - 1;
 }
 
 export function getCLIWarnings(_args: ParsedCLIArgs): string[] {

@@ -50,6 +50,30 @@ describe("extractLinearIssueIdentifiersForCommit", () => {
     expect(ids(result)).toEqual(["ENG-123"]);
   });
 
+  it("deduplicates identifiers found via prefix and magic-word paths", () => {
+    const commit: CommitContext = {
+      sha: "abc123",
+      branchName: null,
+      message: "[LIN-1] title\n\nFixes LIN-1",
+    };
+
+    const result = extractLinearIssueIdentifiersForCommit(commit, { commitPrefixPattern: /^\[(.+?)\]/ });
+
+    expect(ids(result)).toEqual(["LIN-1"]);
+  });
+
+  it("deduplicates identifiers found via prefix, branch, and magic-word paths", () => {
+    const commit: CommitContext = {
+      sha: "abc123",
+      branchName: "feature/LIN-1-thing",
+      message: "[LIN-1] title\n\nFixes LIN-1",
+    };
+
+    const result = extractLinearIssueIdentifiersForCommit(commit, { commitPrefixPattern: /^\[(.+?)\]/ });
+
+    expect(ids(result)).toEqual(["LIN-1"]);
+  });
+
   it("returns empty array when no identifiers are present", () => {
     const commit: CommitContext = {
       sha: "abc123",
@@ -711,5 +735,138 @@ describe("extractPullRequestNumbersForCommit", () => {
   ])("message %j should yield %j (%s)", (message, expected) => {
     const result = extractPullRequestNumbersForCommit({ sha: "abc", message });
     expect(result).toEqual(expected);
+  });
+});
+
+describe("commit prefix pattern option", () => {
+  const bracketed = /^\[(.+?)\]/;
+
+  it("does not detect prefix-style identifiers without an option", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "[LIN-123] feat: add the thing",
+    });
+
+    expect(ids(result)).toEqual([]);
+  });
+
+  it.each([
+    [/^\[(.+?)\]/, "[LIN-123] feat: add the thing", ["LIN-123"]],
+    [/^\[(.+?)\]/, "[lin-123] lowercase team key", ["LIN-123"]],
+    [/^\[(.+?)\]/, "[LIN-123, LIN-456] multiple", ["LIN-123", "LIN-456"]],
+    [/^\((.+?)\):/, "(LIN-1): parenthesised prefix", ["LIN-1"]],
+    [/^#(.+?) /, "#LIN-7 hash prefix", ["LIN-7"]],
+    // Anchored pattern stops after first match per line; second bracket is missed
+    [/^\[(.+?)\]/, "[LIN-1] [LIN-2] double anchored", ["LIN-1"]],
+    // Unanchored pattern finds every occurrence on the line
+    [/\[(.+?)\]/, "[LIN-1] [LIN-2] double unanchored", ["LIN-1", "LIN-2"]],
+    // Unanchored body markdown like [Release notes] captures but contains no ID shape
+    [/\[(.+?)\]/, "[LIN-1] Bump foo\n\nBumps [bar] - [Release notes]", ["LIN-1"]],
+    // Unanchored: prose separators (commas, "and", "thing") between bracketed IDs do not break detection
+    [/\[(.+?)\]/, "[LIN-1], [LIN-2] and [LIN-3] thing [LIN-4]", ["LIN-1", "LIN-2", "LIN-3", "LIN-4"]],
+    // Unanchored: prefix path catches bracketed IDs, magic-word path catches the trailing `Closes LIN-5`
+    [
+      /\[(.+?)\]/,
+      "[LIN-1], [LIN-2] and [LIN-3] thing [LIN-4], Closes LIN-5",
+      ["LIN-1", "LIN-2", "LIN-3", "LIN-4", "LIN-5"],
+    ],
+    // Anchored: only first bracketed ID matches; trailing `Closes LIN-5` still picked up by magic-word path
+    [/^\[(.+?)\]/, "[LIN-1], [LIN-2] and [LIN-3] thing [LIN-4], Closes LIN-5", ["LIN-1", "LIN-5"]],
+    // Whitespace inside brackets is harmless: inner ID regex still finds the ID token in the capture
+    [/\[(.+?)\]/, "[LIN-1] [ LIN-2 ] spaced", ["LIN-1", "LIN-2"]],
+    // Magic word followed by a bracketed ID: brackets defeat the magic-word grammar, but prefix path still catches it
+    [/\[(.+?)\]/, "Closes [LIN-5]", ["LIN-5"]],
+    // Prefix pattern's anchor is per-line: line 2 starts fresh, so its bracketed ID still matches
+    [/^\[(.+?)\]/, "[LIN-1] first line\n[LIN-2] second line", ["LIN-1", "LIN-2"]],
+    // Brackets containing non-ID prose contribute nothing, but neighbours still match
+    [/\[(.+?)\]/, "[LIN-1] Bump [some-dep] from 1 to 2 [LIN-2]", ["LIN-1", "LIN-2"]],
+  ])("pattern %s on message %j yields %j", (pattern, message, expected) => {
+    const result = extractLinearIssueIdentifiersForCommit(
+      { sha: "abc", branchName: null, message },
+      { commitPrefixPattern: pattern },
+    );
+
+    expect(ids(result).sort()).toEqual(expected.sort());
+  });
+
+  it("rejects leading-zero identifiers in the prefix capture", () => {
+    const result = extractLinearIssueIdentifiersForCommit(
+      { sha: "abc", branchName: null, message: "[LIN-0004] zero" },
+      { commitPrefixPattern: bracketed },
+    );
+
+    expect(ids(result)).toEqual([]);
+  });
+
+  it("normalizes a user-supplied `g` flag without producing duplicate matches", () => {
+    // A pattern already carrying `g` could yield surprising state if not
+    // normalized; the matcher rebuilds the regex internally to ensure each
+    // bracketed ID is captured exactly once.
+    const withGlobalFlag = /\[(.+?)\]/g;
+    const result = extractLinearIssueIdentifiersForCommit(
+      { sha: "abc", branchName: null, message: "[LIN-1] [LIN-2] [LIN-3] foo" },
+      { commitPrefixPattern: withGlobalFlag },
+    );
+
+    expect(ids(result).sort()).toEqual(["LIN-1", "LIN-2", "LIN-3"]);
+  });
+
+  it("preserves a user-supplied `i` flag", () => {
+    // The `i` flag isn't strictly required (`matchAllIdentifiers` is already
+    // case-insensitive), but the user may have anchored on a case-sensitive
+    // bracket-prefix and added `i` for the inner content. Make sure the flag
+    // survives the normalization that strips `g`/`y`.
+    const caseInsensitive = /^\[(LIN-\d+)\]/i;
+    const result = extractLinearIssueIdentifiersForCommit(
+      { sha: "abc", branchName: null, message: "[lin-42] lowercase team key" },
+      { commitPrefixPattern: caseInsensitive },
+    );
+
+    expect(ids(result)).toEqual(["LIN-42"]);
+  });
+
+  it("combines with default magic-word detection", () => {
+    const result = extractLinearIssueIdentifiersForCommit(
+      { sha: "abc", branchName: null, message: "[LIN-1] title\n\nFixes LIN-2" },
+      { commitPrefixPattern: bracketed },
+    );
+
+    expect(ids(result).sort()).toEqual(["LIN-1", "LIN-2"]);
+  });
+
+  it("matches the prefix on any line of the message", () => {
+    const result = extractLinearIssueIdentifiersForCommit(
+      { sha: "abc", branchName: null, message: "feat: do thing\n\n[LIN-999] follow-up note" },
+      { commitPrefixPattern: bracketed },
+    );
+
+    expect(ids(result)).toEqual(["LIN-999"]);
+  });
+
+  it("ignores prefix matches inside a stripped squash sub-commit dump", () => {
+    const message = `[LIN-100] New widget
+
+Squashed commit of the following:
+
+commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+    [LIN-50] Older shipped work
+`;
+    const result = extractLinearIssueIdentifiersForCommit(
+      { sha: "abc", branchName: null, message },
+      { commitPrefixPattern: bracketed },
+    );
+
+    expect(ids(result)).toEqual(["LIN-100"]);
+  });
+
+  it("detects the prefix on a reverted inner title", () => {
+    const result = extractRevertedIssueIdentifiersForCommit(
+      { sha: "abc", branchName: null, message: 'Revert "[LIN-1] title"' },
+      { commitPrefixPattern: bracketed },
+    );
+
+    expect(ids(result)).toEqual(["LIN-1"]);
   });
 });

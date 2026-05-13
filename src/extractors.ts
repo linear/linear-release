@@ -185,7 +185,45 @@ export type ExtractedIdentifier = {
   source: "branch_name" | "commit_message";
 };
 
-export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): ExtractedIdentifier[] {
+export type ExtractionOptions = {
+  /**
+   * Regex applied to each line of the commit message. The first capture group
+   * must wrap the issue-ID portion, and is fed to the standard identifier
+   * matcher (which also accepts ID chains like `LIN-1, LIN-2` and rejects
+   * leading-zero IDs). Anchor with `^` to match once per line. The `g` flag
+   * is forced and `y` is dropped internally. Example: `^\[(.+?)\]`.
+   */
+  commitPrefixPattern?: RegExp;
+};
+
+/**
+ * Match a user-supplied prefix regex line-by-line, finding all occurrences on
+ * each line. The regex's first capture group is fed to the standard identifier
+ * matcher (uppercase normalization + leading-zero rejection + multi-ID list
+ * grammar). The caller is expected to anchor with `^` if they want a
+ * prefix-only match; an anchored pattern naturally still matches at most once
+ * per line. Squashed sub-commit dumps are already removed by `stripSquashBlock`
+ * before this runs.
+ */
+function matchCommitPrefixIdentifiers(text: string, pattern: RegExp): IdentifierMatch[] {
+  // Force `g` (and drop `y`) so `matchAll` iterates every occurrence per line.
+  const flags = pattern.flags.replace(/[gy]/g, "") + "g";
+  const regex = new RegExp(pattern.source, flags);
+
+  const results: IdentifierMatch[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    for (const match of line.matchAll(regex)) {
+      if (!match[1]) continue;
+      results.push(...matchAllIdentifiers(match[1]));
+    }
+  }
+  return results;
+}
+
+export function extractLinearIssueIdentifiersForCommit(
+  commit: CommitContext,
+  options: ExtractionOptions = {},
+): ExtractedIdentifier[] {
   if (!commit) {
     return [];
   }
@@ -213,7 +251,6 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): E
     }
   }
 
-  // Commit message: only extract when preceded by a magic word.
   // Strip any squashed sub-commit dump first so references that came from
   // already-merged branch history don't get re-attributed to this commit.
   const message = stripSquashBlock(commit.message ?? "");
@@ -221,6 +258,13 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): E
     for (const match of matchMagicWordIdentifiers(message)) {
       if (!found.has(match.identifier)) {
         found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
+      }
+    }
+    if (options.commitPrefixPattern) {
+      for (const match of matchCommitPrefixIdentifiers(message, options.commitPrefixPattern)) {
+        if (!found.has(match.identifier)) {
+          found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
+        }
       }
     }
   }
@@ -338,7 +382,10 @@ export function getRevertMessageDepth(message: string | null | undefined): numbe
 }
 
 /** Extract identifiers being reverted. Returns [] if not an odd-depth revert. */
-export function extractRevertedIssueIdentifiersForCommit(commit: CommitContext): ExtractedIdentifier[] {
+export function extractRevertedIssueIdentifiersForCommit(
+  commit: CommitContext,
+  options: ExtractionOptions = {},
+): ExtractedIdentifier[] {
   if (!commit) return [];
 
   const { depth: branchDepth, inner: originalBranch } = parseRevertBranch(commit.branchName ?? "");
@@ -357,13 +404,20 @@ export function extractRevertedIssueIdentifiersForCommit(commit: CommitContext):
     }
   }
 
-  // Use magic-word gating on the inner message, same as the add path, to avoid
-  // false positives from generic word-number tokens (e.g. "Bump v1-2 to v1-3").
+  // Mirror the add path's gating on the inner message to avoid false positives
+  // from generic word-number tokens (e.g. "Bump v1-2 to v1-3").
   if (messageDepth % 2 === 1) {
     const innerStripped = stripSquashBlock(innerMessage);
     for (const match of matchMagicWordIdentifiers(innerStripped)) {
       if (!found.has(match.identifier)) {
         found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
+      }
+    }
+    if (options.commitPrefixPattern) {
+      for (const match of matchCommitPrefixIdentifiers(innerStripped, options.commitPrefixPattern)) {
+        if (!found.has(match.identifier)) {
+          found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
+        }
       }
     }
   }

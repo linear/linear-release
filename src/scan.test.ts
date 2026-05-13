@@ -128,4 +128,24 @@ describe("scanCommits", () => {
       expect(ids(result.revertedIssueReferences)).toEqual(["ENG-100"]);
     });
   });
+
+  describe("extraction options", () => {
+    const bracketed = /^\[(.+?)\]/;
+
+    it("propagates commitPrefixPattern through to the extractor", () => {
+      const commits: CommitContext[] = [{ sha: "a1", message: "[LIN-1] do the thing" }];
+      const result = scanCommits(commits, null, { commitPrefixPattern: bracketed });
+      expect(ids(result.issueReferences)).toEqual(["LIN-1"]);
+    });
+
+    it("applies last-write-wins across prefix-detected add then revert", () => {
+      const commits: CommitContext[] = [
+        { sha: "a1", message: "[LIN-1] add the thing" },
+        { sha: "r1", message: 'Revert "[LIN-1] add the thing"' },
+      ];
+      const result = scanCommits(commits, null, { commitPrefixPattern: bracketed });
+      expect(ids(result.issueReferences)).toEqual([]);
+      expect(ids(result.revertedIssueReferences)).toEqual(["LIN-1"]);
+    });
+  });
 });

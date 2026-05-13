@@ -1,4 +1,5 @@
 import {
+  ExtractionOptions,
   extractLinearIssueIdentifiersForCommit,
   extractPullRequestNumbersForCommit,
   extractRevertedIssueIdentifiersForCommit,
@@ -14,6 +15,7 @@ import { CommitContext, DebugSink, IssueReference, PullRequestSource } from "./t
 export function scanCommits(
   commits: CommitContext[],
   includePaths: string[] | null,
+  extractionOptions: ExtractionOptions = {},
 ): {
   issueReferences: IssueReference[];
   revertedIssueReferences: IssueReference[];
@@ -36,7 +38,7 @@ export function scanCommits(
   for (const commit of commits) {
     debugSink.inspectedShas.push(commit.sha);
 
-    for (const { identifier, source } of extractRevertedIssueIdentifiersForCommit(commit)) {
+    for (const { identifier, source } of extractRevertedIssueIdentifiersForCommit(commit, extractionOptions)) {
       if (!debugSink.revertedIssues[identifier]) {
         debugSink.revertedIssues[identifier] = [];
       }
@@ -51,7 +53,7 @@ export function scanCommits(
       verbose(`Detected reverted issue key ${identifier} from commit ${commit.sha}`);
     }
 
-    for (const { identifier, source } of extractLinearIssueIdentifiersForCommit(commit)) {
+    for (const { identifier, source } of extractLinearIssueIdentifiersForCommit(commit, extractionOptions)) {
       if (!debugSink.issues[identifier]) {
         debugSink.issues[identifier] = [];
       }
