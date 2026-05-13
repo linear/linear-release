@@ -243,7 +243,7 @@ Case-sensitivity rarely matters anyway: ID matching is already case-insensitive,
 1. **Fetches the latest release** from your Linear pipeline to determine the commit range
 2. **Scans commits** between the commit from the last release and the current commit
 3. **Extracts issue identifiers** from branch names and commit messages: by default via magic words (`Fixes LIN-1`); see [Issue Detection](#issue-detection) for prefix conventions
-4. **Detects pull request numbers** from commit messages (e.g., `Merge pull request #42`)
+4. **Detects pull/merge request numbers** from commit messages — GitHub `Title (#42)` / `Merge pull request #42`, and GitLab `See merge request <group>/<project>!42` trailers (emitted whenever a merge commit is created)
 5. **Syncs data to Linear** that adds issues to a newly created completed release (continuous pipelines) or the currently in-progress release (scheduled pipelines)
 
 **First sync**: when no prior release exists for the pipeline, only the current commit is scanned (there's no previous SHA to bound the range from).
@@ -257,6 +257,7 @@ Case-sensitivity rarely matters anyway: ID matching is already case-insensitive,
 - **Operation timed out**: the CLI aborts after 60 seconds by default. For large repositories or slow networks, increase the limit with `--timeout=120`.
 - **`git` not on PATH**: the CLI shells out to `git`. Install it in your CI image (e.g. `apt-get install -y git` on Debian/Ubuntu).
 - **No `.git` directory found**: the CLI must run inside a full clone. On GitLab CI, set `GIT_STRATEGY: clone` (not `none` or `empty`) and `GIT_DEPTH: 0` on the linear-release job.
+- **GitLab MR numbers are not linked**: linear-release reads the `See merge request <group>/<project>!N` trailer that GitLab adds to merge commits. Projects configured with `merge_method: fast-forward` produce no merge commit and no trailer, so the MR number cannot be recovered from the message. To still link the change to its Linear issue, include the identifier in the branch name (e.g. `username/eng-123-add-feature`) or in the commit message with a magic word (e.g. `Fixes ENG-123`).
 - **Binary fails to start with "not found" or loader errors**: the prebuilt binary is glibc-linked and will not run on Alpine/musl images. Switch to a Debian/Ubuntu base (`debian:bookworm-slim`, `ubuntu:24.04`).
 
 ## License

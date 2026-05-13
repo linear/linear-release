@@ -870,3 +870,64 @@ commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     expect(ids(result)).toEqual(["LIN-1"]);
   });
 });
+
+describe("extractPullRequestNumbersForCommit — GitLab merge request trailer", () => {
+  // GitLab emits this trailer whenever it creates a merge commit.
+  it.each([
+    [
+      "default merge",
+      "Merge branch 'eng-123-add-feature' into 'main'\n\nAdd feature\n\nSee merge request acme/web!1",
+      [1],
+    ],
+    [
+      "squash-before-merge merge commit",
+      "Merge branch 'eng-456-fix-bug' into 'main'\n\nFix bug\n\nSee merge request acme/web!4",
+      [4],
+    ],
+  ])("%s → %j", (_name, message, expected) => {
+    const result = extractPullRequestNumbersForCommit({ sha: "abc", message });
+    expect(result).toEqual(expected);
+  });
+
+  // Path-shape variants the regex must accept.
+  it.each([
+    ["subgroup path", "Merge\n\nSee merge request acme/platform/web!42", [42]],
+    ["hyphens in path", "Merge\n\nSee merge request linear-app/axel-test!3", [3]],
+    ["dots in path", "Merge\n\nSee merge request my.org/my.repo!9", [9]],
+    ["trailing text after number", "Merge\n\nSee merge request acme/web!42 (auto-merged)", [42]],
+    [
+      "multiple trailers on consecutive lines (collect + dedupe)",
+      "Merge\n\nSee merge request acme/web!42\nSee merge request acme/web!43",
+      [42, 43],
+    ],
+  ])("%s → %j", (_name, message, expected) => {
+    const result = extractPullRequestNumbersForCommit({ sha: "abc", message });
+    expect(result).toEqual(expected);
+  });
+
+  // Body content that must NOT trigger extraction.
+  it.each([
+    ["inline reference (not line-anchored)", "Something See merge request acme/web!42 inline"],
+    ["leading whitespace before the trailer", "   See merge request acme/web!42"],
+    ["bare !N without the trailer phrase", "Closes !42 maybe"],
+    ["empty path before !N", "See merge request !42"],
+    ["reference with no number", "See merge request acme/web!"],
+    ["number above Int32 max is dropped", `Merge\n\nSee merge request foo/bar!${2_147_483_648}`],
+    [
+      'revert short-circuits before reaching the trailer (Revert "..." at start)',
+      "Revert \"Merge branch 'x' into 'main'\n\nSee merge request acme/web!42\"",
+    ],
+  ])("%s yields no PR numbers", (_name, message) => {
+    const result = extractPullRequestNumbersForCommit({ sha: "abc", message });
+    expect(result).toEqual([]);
+  });
+
+  it("revert merge branch (revert-N-...) returns [] even with a trailer in the body", () => {
+    const result = extractPullRequestNumbersForCommit({
+      sha: "abc",
+      branchName: "revert-1234-feature-branch",
+      message: "Merge\n\nSee merge request acme/web!42",
+    });
+    expect(result).toEqual([]);
+  });
+});
