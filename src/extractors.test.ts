@@ -444,6 +444,36 @@ describe("revert branch handling", () => {
     expect(ids(result)).toEqual(["ENG-100"]);
   });
 
+  it("extracts magic-word references from a revert commit body as added (issue closed by the revert)", () => {
+    // A revert PR whose body says `Fixes LIN-N` is closing that issue *by*
+    // reverting. Previously these references were dropped entirely, so the
+    // deployed-status transition never fired.
+    const message = `Revert "Migration ActionMenu to StyleX" (#73629)
+
+Fixes LIN-69675`;
+    const result = extractLinearIssueIdentifiersForCommit({ sha: "abc", branchName: null, message });
+    expect(ids(result)).toEqual(["LIN-69675"]);
+  });
+
+  it("revert body with a stray quote does not leak the body into the reverted bucket", () => {
+    // The previous regex was greedy + dotall, so any `"` later in the body
+    // would extend the captured "inner subject" across the entire message and
+    // pull body magic-word references into the reverted bucket.
+    const message = `Revert "Original title" (#73629)
+
+Fixes LIN-69675 said "ship it"`;
+    const result = extractRevertedIssueIdentifiersForCommit({ sha: "abc", branchName: null, message });
+    expect(ids(result)).toEqual([]);
+  });
+
+  it("revert with magic word in both inner subject and body splits added vs reverted", () => {
+    const message = `Revert "Fixes ENG-100"
+
+Fixes LIN-50`;
+    expect(ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual(["LIN-50"]);
+    expect(ids(extractRevertedIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual(["ENG-100"]);
+  });
+
   it("allows extraction from revert-of-revert branch (even depth)", () => {
     const result = extractLinearIssueIdentifiersForCommit({
       sha: "abc",
@@ -656,11 +686,15 @@ Closes LIN-200`;
     expect(ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual(["LIN-200"]);
   });
 
-  it("does not strip squash blocks from revert add-extraction (revert path is already blocked)", () => {
-    // A revert message that wraps a squash dump shouldn't add anything.
-    const message = `Revert "Squashed commit of the following:
+  it("strips squash blocks from a revert commit body before scanning for added references", () => {
+    // A real revert: subject on one line, body may contain a nested squash
+    // dump from earlier branch history. References inside the dump describe
+    // already-shipped commits — they must not be re-attributed to the revert.
+    const message = `Revert "Some PR"
 
-    Fixes LIN-50"`;
+Squashed commit of the following:
+
+    Fixes LIN-50`;
     expect(ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual([]);
   });
 });
