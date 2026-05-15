@@ -195,22 +195,26 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): E
     return [];
   }
 
-  // Odd depth = revert (skip); even depth = non-revert or revert-of-revert (re-add).
+  // Odd depth = revert; even depth = non-revert or revert-of-revert (re-add).
   const { depth: branchDepth, inner: strippedBranch } = parseRevertBranch(commit.branchName ?? "");
-  if (branchDepth % 2 === 1) {
-    verbose(`Skipping revert branch "${commit.branchName}" (depth ${branchDepth}) for commit ${commit.sha}`);
-    return [];
-  }
   const { depth: messageDepth, afterTitle } = parseRevertMessage(commit.message ?? "");
 
   const found = new Map<string, ExtractedIdentifier>();
 
-  if (strippedBranch.length > 0) {
+  // Odd-depth revert branches name what was *reverted* (e.g. `revert-456-eng-100-fix`),
+  // not what the revert itself adds — so the branch contributes no added identifiers.
+  // The body scan below still runs, since `Fixes ENG-N` in the revert message body
+  // is the revert author's own note about what they're closing.
+  if (branchDepth % 2 === 0 && strippedBranch.length > 0) {
     for (const match of matchAllIdentifiers(strippedBranch)) {
       if (!found.has(match.identifier)) {
         found.set(match.identifier, { identifier: match.identifier, source: "branch_name" });
       }
     }
+  } else if (branchDepth % 2 === 1) {
+    verbose(
+      `Skipping branch-name extraction for revert branch "${commit.branchName}" (depth ${branchDepth}) on ${commit.sha}`,
+    );
   }
 
   // In a revert, the inner subject's identifiers are reverted, not added — but

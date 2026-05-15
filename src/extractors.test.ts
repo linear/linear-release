@@ -448,7 +448,25 @@ describe("revert branch handling", () => {
     const message = `Revert "Migration ActionMenu to StyleX" (#73629)
 
 Fixes ENG-123`;
-    const result = extractLinearIssueIdentifiersForCommit({ sha: "abc", branchName: null, message });
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message,
+    });
+    expect(ids(result)).toEqual(["ENG-123"]);
+  });
+
+  it("scans the revert body even when branch is the GitHub auto-revert form", () => {
+    // GitHub's "Revert" button creates `revert-<N>-<original-branch>`. The
+    // branch contribution is suppressed (inner names the reverted work), but
+    // the revert author's body note must still flow to added.
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: "revert-456-axel/eng-100-original-feature",
+      message: `Revert "Original feature" (#456)
+
+Fixes ENG-123`,
+    });
     expect(ids(result)).toEqual(["ENG-123"]);
   });
 
@@ -456,15 +474,19 @@ Fixes ENG-123`;
     const message = `Revert "Original title" (#73629)
 
 Fixes ENG-123 said "ship it"`;
-    const result = extractRevertedIssueIdentifiersForCommit({ sha: "abc", branchName: null, message });
+    const result = extractRevertedIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message,
+    });
     expect(ids(result)).toEqual([]);
   });
 
   it("revert with magic word in both inner subject and body splits added vs reverted", () => {
     const message = `Revert "Fixes ENG-100"
 
-Fixes LIN-50`;
-    expect(ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual(["LIN-50"]);
+Fixes ENG-123`;
+    expect(ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual(["ENG-123"]);
     expect(ids(extractRevertedIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual(["ENG-100"]);
   });
 

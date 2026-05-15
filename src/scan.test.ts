@@ -102,19 +102,21 @@ describe("scanCommits", () => {
       expect(ids(result.revertedIssueReferences)).toEqual([]);
     });
 
-    it("reverts despite magic word in message when branch signals revert", () => {
-      // The branch name (revert-1-...) signals this is a revert, even though
-      // the message body contains "Fixes ENG-100" which would normally add it.
+    it("body magic word adds the new issue when branch signals revert (LIN-69678 flow)", () => {
+      // GitHub's auto-revert form: branch is `revert-<N>-<original>` and the
+      // revert author's body note `Fixes ENG-200` claims a new issue is closed
+      // by reverting. The branch inner names the reverted work (ENG-100); the
+      // body names the added work (ENG-200).
       const commits: CommitContext[] = [
         { sha: "a1", branchName: "user/eng-100" },
         {
           sha: "r1",
           branchName: "revert-1-user/eng-100",
-          message: "Merge pull request #2\n\nFixes ENG-100",
+          message: "Merge pull request #2\n\nFixes ENG-200",
         },
       ];
       const result = scanCommits(commits, null);
-      expect(ids(result.issueReferences)).toEqual([]);
+      expect(ids(result.issueReferences)).toEqual(["ENG-200"]);
       expect(ids(result.revertedIssueReferences)).toEqual(["ENG-100"]);
     });
 
