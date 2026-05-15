@@ -445,23 +445,17 @@ describe("revert branch handling", () => {
   });
 
   it("extracts magic-word references from a revert commit body as added (issue closed by the revert)", () => {
-    // A revert PR whose body says `Fixes LIN-N` is closing that issue *by*
-    // reverting. Previously these references were dropped entirely, so the
-    // deployed-status transition never fired.
     const message = `Revert "Migration ActionMenu to StyleX" (#73629)
 
-Fixes LIN-69675`;
+Fixes ENG-123`;
     const result = extractLinearIssueIdentifiersForCommit({ sha: "abc", branchName: null, message });
-    expect(ids(result)).toEqual(["LIN-69675"]);
+    expect(ids(result)).toEqual(["ENG-123"]);
   });
 
-  it("revert body with a stray quote does not leak the body into the reverted bucket", () => {
-    // The previous regex was greedy + dotall, so any `"` later in the body
-    // would extend the captured "inner subject" across the entire message and
-    // pull body magic-word references into the reverted bucket.
+  it("stray quote in revert body does not leak the body into the reverted bucket", () => {
     const message = `Revert "Original title" (#73629)
 
-Fixes LIN-69675 said "ship it"`;
+Fixes ENG-123 said "ship it"`;
     const result = extractRevertedIssueIdentifiersForCommit({ sha: "abc", branchName: null, message });
     expect(ids(result)).toEqual([]);
   });
@@ -687,9 +681,6 @@ Closes LIN-200`;
   });
 
   it("strips squash blocks from a revert commit body before scanning for added references", () => {
-    // A real revert: subject on one line, body may contain a nested squash
-    // dump from earlier branch history. References inside the dump describe
-    // already-shipped commits — they must not be re-attributed to the revert.
     const message = `Revert "Some PR"
 
 Squashed commit of the following:

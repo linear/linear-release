@@ -195,8 +195,7 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): E
     return [];
   }
 
-  // Odd depth = the commit is undoing previous work (a revert), so we must not
-  // count the reverted subject's identifiers as "added". Even depth = revert-of-revert (re-add).
+  // Odd depth = revert (skip); even depth = non-revert or revert-of-revert (re-add).
   const { depth: branchDepth, inner: strippedBranch } = parseRevertBranch(commit.branchName ?? "");
   if (branchDepth % 2 === 1) {
     verbose(`Skipping revert branch "${commit.branchName}" (depth ${branchDepth}) for commit ${commit.sha}`);
@@ -214,15 +213,10 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): E
     }
   }
 
-  // For odd messageDepth (a revert), the inner subject describes the original
-  // commit being undone — its identifiers are reverted, not added. But the
-  // revert author's own notes live in the body (and any trailing content on
-  // the subject line), so we still scan those for magic-word references like
-  // `Fixes LIN-N` that describe what the revert itself closes.
-  // For even depth (non-revert, or revert-of-revert), the full message is fair
-  // game — same as the original behavior.
-  // Strip any squashed sub-commit dump first so references that came from
-  // already-merged branch history don't get re-attributed to this commit.
+  // In a revert, the inner subject's identifiers are reverted, not added — but
+  // the revert author's body (e.g. `Fixes LIN-N`) describes what the revert
+  // itself closes, so scan that. Strip squash dumps first to avoid attributing
+  // already-shipped references to this commit.
   const scanTarget = messageDepth % 2 === 1 ? afterTitle : (commit.message ?? "");
   const message = stripSquashBlock(scanTarget);
   if (message.length > 0) {
@@ -344,16 +338,11 @@ export function getRevertBranchDepth(branchName: string | null | undefined): num
 }
 
 /**
- * Unwrap `Revert "..."` layers found on the subject line only.
- *
- * The subject line is the canonical place where `git revert` writes the wrapper;
- * scanning the whole message would let a stray `"` in the body close the regex
- * far past the real subject, swallowing magic-word references the revert author
- * added (e.g. `Fixes LIN-N` describing what the revert itself fixes) into the
- * "reverted" pile. `afterTitle` collects everything that is NOT part of the
- * unwrapped subject — both any trailing content on the subject line (such as
- * `(#N)`) and the entire body — so callers can scan it for the revert author's
- * own references.
+ * Unwrap `Revert "..."` layers on the subject line only. Scanning the whole
+ * message would let a stray `"` in the body extend the capture past the real
+ * subject. `afterTitle` is everything outside the unwrapped subject (trailing
+ * content on the subject line plus the body), so callers can scan it for the
+ * revert author's own references.
  */
 function parseRevertMessage(message: string): { depth: number; inner: string; afterTitle: string } {
   const newlineIdx = message.search(/\r?\n/);
