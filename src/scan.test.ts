@@ -22,7 +22,10 @@ describe("scanCommits", () => {
         branchName: "revert-571-romain/bac-39",
         message: 'Merge pull request #572 from org/revert-571-romain/bac-39 Revert "Add TEST variable"',
       },
-      { sha: "ra1", message: 'Revert "Revert "Add TEST variable to .env.example""' },
+      {
+        sha: "ra1",
+        message: 'Revert "Revert "Add TEST variable to .env.example""',
+      },
       {
         sha: "ra2",
         branchName: "revert-572-revert-571-romain/bac-39",
@@ -52,8 +55,14 @@ describe("scanCommits", () => {
   describe("squash revert with magic word in message", () => {
     it("reverts identifier extracted from unwrapped message via magic word", () => {
       const commits: CommitContext[] = [
-        { sha: "a1", message: "Fixes DRIVE-320: memory leak in background location service" },
-        { sha: "r1", message: 'Revert "Fixes DRIVE-320: memory leak in background location service"' },
+        {
+          sha: "a1",
+          message: "Fixes DRIVE-320: memory leak in background location service",
+        },
+        {
+          sha: "r1",
+          message: 'Revert "Fixes DRIVE-320: memory leak in background location service"',
+        },
       ];
       const result = scanCommits(commits, null);
       expect(ids(result.issueReferences)).toEqual([]);
@@ -75,7 +84,11 @@ describe("scanCommits", () => {
     it("separates different issues into added and reverted lists", () => {
       const commits: CommitContext[] = [
         { sha: "a1", branchName: "user/eng-100", message: "Fixes ENG-100" },
-        { sha: "r1", branchName: "revert-1-user/eng-200", message: 'Revert "ENG-200: something"' },
+        {
+          sha: "r1",
+          branchName: "revert-1-user/eng-200",
+          message: 'Revert "ENG-200: something"',
+        },
       ];
       const result = scanCommits(commits, null);
       expect(ids(result.issueReferences)).toEqual(["ENG-100"]);
@@ -85,7 +98,11 @@ describe("scanCommits", () => {
     it("reverts when same issue is added then reverted", () => {
       const commits: CommitContext[] = [
         { sha: "a1", branchName: "user/eng-100" },
-        { sha: "r1", branchName: "revert-1-user/eng-100", message: 'Revert "ENG-100: fix"' },
+        {
+          sha: "r1",
+          branchName: "revert-1-user/eng-100",
+          message: 'Revert "ENG-100: fix"',
+        },
       ];
       const result = scanCommits(commits, null);
       expect(ids(result.issueReferences)).toEqual([]);
@@ -94,7 +111,11 @@ describe("scanCommits", () => {
 
     it("adds when same issue is reverted then re-added", () => {
       const commits: CommitContext[] = [
-        { sha: "r1", branchName: "revert-1-user/eng-100", message: 'Revert "ENG-100: fix"' },
+        {
+          sha: "r1",
+          branchName: "revert-1-user/eng-100",
+          message: 'Revert "ENG-100: fix"',
+        },
         { sha: "a1", branchName: "user/eng-100" },
       ];
       const result = scanCommits(commits, null);
@@ -102,19 +123,21 @@ describe("scanCommits", () => {
       expect(ids(result.revertedIssueReferences)).toEqual([]);
     });
 
-    it("reverts despite magic word in message when branch signals revert", () => {
-      // The branch name (revert-1-...) signals this is a revert, even though
-      // the message body contains "Fixes ENG-100" which would normally add it.
+    it("body magic word adds the new issue when branch signals revert", () => {
+      // GitHub's auto-revert form: branch is `revert-<N>-<original>` and the
+      // revert author's body note `Fixes ENG-200` claims a new issue is closed
+      // by reverting. The branch inner names the reverted work (ENG-100); the
+      // body names the added work (ENG-200).
       const commits: CommitContext[] = [
         { sha: "a1", branchName: "user/eng-100" },
         {
           sha: "r1",
           branchName: "revert-1-user/eng-100",
-          message: "Merge pull request #2\n\nFixes ENG-100",
+          message: "Merge pull request #2\n\nFixes ENG-200",
         },
       ];
       const result = scanCommits(commits, null);
-      expect(ids(result.issueReferences)).toEqual([]);
+      expect(ids(result.issueReferences)).toEqual(["ENG-200"]);
       expect(ids(result.revertedIssueReferences)).toEqual(["ENG-100"]);
     });
 

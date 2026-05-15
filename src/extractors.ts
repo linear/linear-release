@@ -195,33 +195,34 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): E
     return [];
   }
 
-  // Odd depth = the commit is undoing previous work (a revert), so we must not
-  // count its identifiers as "added". Even depth = revert-of-revert (re-add).
+  // Odd depth = revert; even depth = non-revert or revert-of-revert (re-add).
   const { depth: branchDepth, inner: strippedBranch } = parseRevertBranch(commit.branchName ?? "");
-  if (branchDepth % 2 === 1) {
-    verbose(`Skipping revert branch "${commit.branchName}" (depth ${branchDepth}) for commit ${commit.sha}`);
-    return [];
-  }
-  const { depth: messageDepth } = parseRevertMessage(commit.message ?? "");
-  if (messageDepth % 2 === 1) {
-    verbose(`Skipping revert message (depth ${messageDepth}) for commit ${commit.sha}`);
-    return [];
-  }
+  const { depth: messageDepth, afterTitle } = parseRevertMessage(commit.message ?? "");
 
   const found = new Map<string, ExtractedIdentifier>();
 
-  if (strippedBranch.length > 0) {
+  // Odd-depth revert branches name what was *reverted* (e.g. `revert-456-eng-100-fix`),
+  // not what the revert itself adds — so the branch contributes no added identifiers.
+  // The body scan below still runs, since `Fixes ENG-N` in the revert message body
+  // is the revert author's own note about what they're closing.
+  if (branchDepth % 2 === 0 && strippedBranch.length > 0) {
     for (const match of matchAllIdentifiers(strippedBranch)) {
       if (!found.has(match.identifier)) {
         found.set(match.identifier, { identifier: match.identifier, source: "branch_name" });
       }
     }
+  } else if (branchDepth % 2 === 1) {
+    verbose(
+      `Skipping branch-name extraction for revert branch "${commit.branchName}" (depth ${branchDepth}) on ${commit.sha}`,
+    );
   }
 
-  // Commit message: only extract when preceded by a magic word.
-  // Strip any squashed sub-commit dump first so references that came from
-  // already-merged branch history don't get re-attributed to this commit.
-  const message = stripSquashBlock(commit.message ?? "");
+  // In a revert, the inner subject's identifiers are reverted, not added — but
+  // the revert author's body (e.g. `Fixes LIN-N`) describes what the revert
+  // itself closes, so scan that. Strip squash dumps first to avoid attributing
+  // already-shipped references to this commit.
+  const scanTarget = messageDepth % 2 === 1 ? afterTitle : (commit.message ?? "");
+  const message = stripSquashBlock(scanTarget);
   if (message.length > 0) {
     for (const match of matchMagicWordIdentifiers(message)) {
       if (!found.has(match.identifier)) {
@@ -340,16 +341,29 @@ export function getRevertBranchDepth(branchName: string | null | undefined): num
   return parseRevertBranch(branchName).depth;
 }
 
-function parseRevertMessage(message: string): { depth: number; inner: string } {
-  let text = message;
+/**
+ * Unwrap `Revert "..."` layers on the subject line only. Scanning the whole
+ * message would let a stray `"` in the body extend the capture past the real
+ * subject. `afterTitle` is everything outside the unwrapped subject (trailing
+ * content on the subject line plus the body), so callers can scan it for the
+ * revert author's own references.
+ */
+function parseRevertMessage(message: string): { depth: number; inner: string; afterTitle: string } {
+  const newlineIdx = message.search(/\r?\n/);
+  const subject = newlineIdx === -1 ? message : message.slice(0, newlineIdx);
+  const body = newlineIdx === -1 ? "" : message.slice(newlineIdx);
+
+  let text = subject;
   let depth = 0;
+  let outerAfter = "";
   while (/^Revert "/i.test(text)) {
-    const match = text.match(/^Revert "(.+)"(.*)$/s);
+    const match = text.match(/^Revert "(.+)"(.*)$/);
     if (!match) break;
+    if (depth === 0) outerAfter = match[2]!;
     text = match[1]!;
     depth++;
   }
-  return { depth, inner: text };
+  return { depth, inner: text, afterTitle: outerAfter + body };
 }
 
 /**

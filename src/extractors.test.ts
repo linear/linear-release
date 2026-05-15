@@ -444,6 +444,52 @@ describe("revert branch handling", () => {
     expect(ids(result)).toEqual(["ENG-100"]);
   });
 
+  it("extracts magic-word references from a revert commit body as added (issue closed by the revert)", () => {
+    const message = `Revert "Migration ActionMenu to StyleX" (#73629)
+
+Fixes ENG-123`;
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message,
+    });
+    expect(ids(result)).toEqual(["ENG-123"]);
+  });
+
+  it("scans the revert body even when branch is the GitHub auto-revert form", () => {
+    // GitHub's "Revert" button creates `revert-<N>-<original-branch>`. The
+    // branch contribution is suppressed (inner names the reverted work), but
+    // the revert author's body note must still flow to added.
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: "revert-456-axel/eng-100-original-feature",
+      message: `Revert "Original feature" (#456)
+
+Fixes ENG-123`,
+    });
+    expect(ids(result)).toEqual(["ENG-123"]);
+  });
+
+  it("stray quote in revert body does not leak the body into the reverted bucket", () => {
+    const message = `Revert "Original title" (#73629)
+
+Fixes ENG-123 said "ship it"`;
+    const result = extractRevertedIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message,
+    });
+    expect(ids(result)).toEqual([]);
+  });
+
+  it("revert with magic word in both inner subject and body splits added vs reverted", () => {
+    const message = `Revert "Fixes ENG-100"
+
+Fixes ENG-123`;
+    expect(ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual(["ENG-123"]);
+    expect(ids(extractRevertedIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual(["ENG-100"]);
+  });
+
   it("allows extraction from revert-of-revert branch (even depth)", () => {
     const result = extractLinearIssueIdentifiersForCommit({
       sha: "abc",
@@ -656,11 +702,12 @@ Closes LIN-200`;
     expect(ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual(["LIN-200"]);
   });
 
-  it("does not strip squash blocks from revert add-extraction (revert path is already blocked)", () => {
-    // A revert message that wraps a squash dump shouldn't add anything.
-    const message = `Revert "Squashed commit of the following:
+  it("strips squash blocks from a revert commit body before scanning for added references", () => {
+    const message = `Revert "Some PR"
 
-    Fixes LIN-50"`;
+Squashed commit of the following:
+
+    Fixes LIN-50`;
     expect(ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message }))).toEqual([]);
   });
 });
