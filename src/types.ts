@@ -107,4 +107,5 @@ export type DebugSink = {
   revertedIssues: Record<string, IssueSource[]>; // Issue identifier -> array of sources (reverted)
   pullRequests: PullRequestSource[]; // PR numbers found in commits
   includePaths: string[] | null; // Path filters applied during commit scanning
+  includeMessages: string | null; // Commit-message regex source applied during scanning
 };

@@ -81,6 +81,25 @@ describe("parseCLIArgs", () => {
     expect(result.includePaths).toEqual(["apps/web/**", "packages/**"]);
   });
 
+  it("defaults --include-messages to null", () => {
+    const result = parseCLIArgs([]);
+    expect(result.includeMessages).toBeNull();
+  });
+
+  it("returns --include-messages as the raw pattern string", () => {
+    const result = parseCLIArgs(["--include-messages", "^(feat|fix):"]);
+    expect(result.includeMessages).toBe("^(feat|fix):");
+  });
+
+  it("treats empty --include-messages as no filter", () => {
+    const result = parseCLIArgs(["--include-messages", ""]);
+    expect(result.includeMessages).toBeNull();
+  });
+
+  it("throws a helpful error on invalid --include-messages regex", () => {
+    expect(() => parseCLIArgs(["--include-messages", "([unclosed"])).toThrow(/Invalid --include-messages regex/);
+  });
+
   it("throws on unknown flags (strict mode)", () => {
     expect(() => parseCLIArgs(["--unknown-flag"])).toThrow();
   });

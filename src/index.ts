@@ -51,6 +51,7 @@ Options:
   --release-version=<version>  Release version identifier
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
+  --include-messages=<regex> Filter commits whose subject (first line) matches the regex
   --timeout=<seconds>        Abort if the operation exceeds this duration (default: 60)
   --json                     Output result as JSON (logs emitted as JSON Lines on stderr)
   --quiet                    Suppress info-level output (warnings and errors still printed)
@@ -67,6 +68,7 @@ Examples:
   linear-release complete
   linear-release update --stage=production
   linear-release sync --include-paths="apps/web/**,packages/**"
+  linear-release sync --include-messages="[A-Z]{2,}-[0-9]+"
 `);
   process.exit(0);
 }
@@ -86,8 +88,17 @@ try {
   error(`${message} (run linear-release --help for usage)`);
   process.exit(1);
 }
-const { command, releaseName, releaseVersion, stageName, includePaths, jsonOutput, timeoutSeconds, logLevel } =
-  parsedArgs;
+const {
+  command,
+  releaseName,
+  releaseVersion,
+  stageName,
+  includePaths,
+  includeMessages,
+  jsonOutput,
+  timeoutSeconds,
+  logLevel,
+} = parsedArgs;
 const cliWarnings = getCLIWarnings(parsedArgs);
 setLogLevel(logLevel);
 if (jsonOutput) {
@@ -213,6 +224,7 @@ async function syncCommand(): Promise<{
   const { issueReferences, revertedIssueReferences, prNumbers, debugSink } = scanCommits(
     commits,
     effectiveIncludePaths,
+    includeMessages,
   );
 
   verbose(`Debug sink: ${JSON.stringify(debugSink, null, 2)}`);
