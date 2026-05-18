@@ -398,6 +398,62 @@ describe("commit message magic word behavior", () => {
   });
 });
 
+describe("bracketed identifier in commit subject", () => {
+  it("extracts identifier from a [KEY-N] prefix on the subject line", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "[ENG-123] My change",
+    });
+    expect(ids(result)).toEqual(["ENG-123"]);
+  });
+
+  it("extracts identifier from a lowercase [key-n] prefix", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "[eng-123] adjust thing",
+    });
+    expect(ids(result)).toEqual(["ENG-123"]);
+  });
+
+  it("does not extract bracketed identifier from elsewhere in the message", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "Title\n\nSee [ENG-123] in the docs",
+    });
+    expect(ids(result)).toEqual([]);
+  });
+
+  it("extracts identifier from a parenthesized (KEY-N) prefix on the subject line", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "(ENG-123) My change",
+    });
+    expect(ids(result)).toEqual(["ENG-123"]);
+  });
+
+  it("extracts identifier from a bare KEY-N prefix on the subject line", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "ENG-123 My change",
+    });
+    expect(ids(result)).toEqual(["ENG-123"]);
+  });
+
+  it("does not extract bare prefix when the subject does not start with it", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "My change for ENG-123",
+    });
+    expect(ids(result)).toEqual([]);
+  });
+});
+
 describe("revert branch handling", () => {
   it("blocks extraction from merge commit with revert branch name", () => {
     const result = extractLinearIssueIdentifiersForCommit({

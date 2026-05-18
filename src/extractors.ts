@@ -35,6 +35,22 @@ const ISSUE_IDENTIFIER_REGEX = new RegExp(
 const LINEAR_ISSUE_URL_REGEX = /https?:\/\/linear\.app\/[\w-]+\/issue\/(\w{1,7}-[0-9]{1,9})(?:\/[\w-]*)*/gi;
 
 /**
+ * Patterns for common manual subject-line conventions that aren't gated by a
+ * magic word. Each regex is anchored to the start of the subject and must
+ * capture team key in group 1 and issue number in group 2.
+ *
+ * Add more entries here as new conventions appear in the wild.
+ */
+const COMMON_SUBJECT_PATTERNS: RegExp[] = [
+  // `[ENG-123] My change`
+  new RegExp(`^\\s*\\[(\\w{1,${MAX_KEY_LENGTH}})-([0-9]{1,9})\\]`, "i"),
+  // `(ENG-123) My change`
+  new RegExp(`^\\s*\\((\\w{1,${MAX_KEY_LENGTH}})-([0-9]{1,9})\\)`, "i"),
+  // `ENG-123 My change`
+  new RegExp(`^\\s*(\\w{1,${MAX_KEY_LENGTH}})-([0-9]{1,9})(?=\\s)`, "i"),
+];
+
+/**
  * `git merge --squash` followed by `git commit` writes a body containing this
  * header and then dumps the full message of every commit pulled in via the
  * squash — including upstream history merged into the feature branch via
@@ -161,6 +177,28 @@ function matchAllIdentifiers(text: string): IdentifierMatch[] {
 }
 
 /**
+ * Extract identifiers from common, manually-written subject-line conventions
+ * (e.g. `[ENG-123] My change`). These don't require a magic word — the
+ * convention itself signals intent.
+ */
+function matchCommonSubjectPatterns(message: string): IdentifierMatch[] {
+  const subject = message.split(/\r?\n/)[0] ?? "";
+  const results: IdentifierMatch[] = [];
+  for (const pattern of COMMON_SUBJECT_PATTERNS) {
+    const match = subject.match(pattern);
+    if (!match) continue;
+    const [, teamKey, numberString] = match;
+    if (!teamKey || !numberString) continue;
+    if (Number(numberString).toString().length !== numberString.length) continue;
+    results.push({
+      rawIdentifier: `${teamKey}-${numberString}`,
+      identifier: `${teamKey.toUpperCase()}-${Number(numberString)}`,
+    });
+  }
+  return results;
+}
+
+/**
  * Extract issue identifiers from text only when preceded by a magic word.
  * Processes text line-by-line, matching Linear's detection behavior.
  */
@@ -208,7 +246,10 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): E
   if (branchDepth % 2 === 0 && strippedBranch.length > 0) {
     for (const match of matchAllIdentifiers(strippedBranch)) {
       if (!found.has(match.identifier)) {
-        found.set(match.identifier, { identifier: match.identifier, source: "branch_name" });
+        found.set(match.identifier, {
+          identifier: match.identifier,
+          source: "branch_name",
+        });
       }
     }
   } else if (branchDepth % 2 === 1) {
@@ -224,9 +265,12 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): E
   const scanTarget = messageDepth % 2 === 1 ? afterTitle : (commit.message ?? "");
   const message = stripSquashBlock(scanTarget);
   if (message.length > 0) {
-    for (const match of matchMagicWordIdentifiers(message)) {
+    for (const match of [...matchCommonSubjectPatterns(message), ...matchMagicWordIdentifiers(message)]) {
       if (!found.has(match.identifier)) {
-        found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
+        found.set(match.identifier, {
+          identifier: match.identifier,
+          source: "commit_message",
+        });
       }
     }
   }
@@ -291,10 +335,18 @@ function extractGithubPrNumbers(message: string): PrMatch[] {
   const title = message.split(/\r?\n/)[0] ?? "";
 
   const squash = title.match(GITHUB_SQUASH_RE);
-  if (squash) matches.push({ number: Number.parseInt(squash[1]!, 10), source: "github squash" });
+  if (squash)
+    matches.push({
+      number: Number.parseInt(squash[1]!, 10),
+      source: "github squash",
+    });
 
   const merge = message.match(GITHUB_MERGE_RE);
-  if (merge) matches.push({ number: Number.parseInt(merge[1]!, 10), source: "github merge" });
+  if (merge)
+    matches.push({
+      number: Number.parseInt(merge[1]!, 10),
+      source: "github merge",
+    });
 
   // Fallback for non-canonical merge titles (e.g. a direct push that put the PR
   // number somewhere other than the trailing parens). Restrict to the title —
@@ -302,7 +354,10 @@ function extractGithubPrNumbers(message: string): PrMatch[] {
   // and stale references inside squashed-in sub-commit history.
   if (matches.length === 0) {
     for (const m of title.matchAll(GITHUB_TITLE_SCAN_RE)) {
-      matches.push({ number: Number.parseInt(m[1]!, 10), source: "github title scan" });
+      matches.push({
+        number: Number.parseInt(m[1]!, 10),
+        source: "github title scan",
+      });
     }
   }
 
@@ -348,7 +403,11 @@ export function getRevertBranchDepth(branchName: string | null | undefined): num
  * content on the subject line plus the body), so callers can scan it for the
  * revert author's own references.
  */
-function parseRevertMessage(message: string): { depth: number; inner: string; afterTitle: string } {
+function parseRevertMessage(message: string): {
+  depth: number;
+  inner: string;
+  afterTitle: string;
+} {
   const newlineIdx = message.search(/\r?\n/);
   const subject = newlineIdx === -1 ? message : message.slice(0, newlineIdx);
   const body = newlineIdx === -1 ? "" : message.slice(newlineIdx);
@@ -390,7 +449,10 @@ export function extractRevertedIssueIdentifiersForCommit(commit: CommitContext):
   if (branchDepth % 2 === 1) {
     for (const match of matchAllIdentifiers(originalBranch)) {
       if (!found.has(match.identifier)) {
-        found.set(match.identifier, { identifier: match.identifier, source: "branch_name" });
+        found.set(match.identifier, {
+          identifier: match.identifier,
+          source: "branch_name",
+        });
       }
     }
   }
@@ -401,7 +463,10 @@ export function extractRevertedIssueIdentifiersForCommit(commit: CommitContext):
     const innerStripped = stripSquashBlock(innerMessage);
     for (const match of matchMagicWordIdentifiers(innerStripped)) {
       if (!found.has(match.identifier)) {
-        found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
+        found.set(match.identifier, {
+          identifier: match.identifier,
+          source: "commit_message",
+        });
       }
     }
   }
