@@ -412,16 +412,16 @@ describe("bracketed identifier in commit subject", () => {
     const result = extractLinearIssueIdentifiersForCommit({
       sha: "abc",
       branchName: null,
-      message: "[lin-456] adjust thing",
+      message: "[eng-123] adjust thing",
     });
-    expect(ids(result)).toEqual(["LIN-456"]);
+    expect(ids(result)).toEqual(["ENG-123"]);
   });
 
   it("does not extract bracketed identifier from elsewhere in the message", () => {
     const result = extractLinearIssueIdentifiersForCommit({
       sha: "abc",
       branchName: null,
-      message: "Title\n\nSee [LIN-999] in the docs",
+      message: "Title\n\nSee [ENG-123] in the docs",
     });
     expect(ids(result)).toEqual([]);
   });
