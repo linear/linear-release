@@ -1,13 +1,12 @@
 import { LinearClient, LinearClientOptions } from "@linear/sdk";
 import {
   assertGitAvailable,
-  commitExists,
   ensureCommitAvailable,
   getCommitContextsBetweenShas,
   getCurrentGitInfo,
   getRepoInfo,
-  isAncestor,
   resolveFirstSyncBoundary,
+  verifyAncestorReachable,
 } from "./git";
 import { findBaseSha } from "./base-sha";
 import { scanCommits } from "./scan";
@@ -342,7 +341,7 @@ async function getLatestSha(): Promise<string> {
   }
 
   const candidates = await getRecentReleases();
-  const result = findBaseSha(candidates, currentSha, { isAncestor, commitExists, ensureCommitAvailable });
+  const result = findBaseSha(candidates, currentSha, { verifyAncestorReachable });
   if (result.kind === "found") {
     return result.sha;
   }

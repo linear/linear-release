@@ -171,6 +171,11 @@ export function commitExists(sha: string, cwd: string = process.cwd()): boolean 
  * Used to verify that a candidate base SHA is actually on HEAD's history before
  * we hand it to `git log <base>..<HEAD>` — a candidate from a side branch (e.g.
  * a hotfix release) will scan a wrong range otherwise.
+ *
+ * Caveat on shallow clones: `git merge-base --is-ancestor` exits 1 both when
+ * `sha` is genuinely not an ancestor AND when the walk hits a shallow boundary
+ * before reaching `sha`. Callers that need to disambiguate should use
+ * `verifyAncestorReachable`, which deepens and retries on shallow cutoffs.
  */
 export function isAncestor(sha: string, headSha: string, cwd: string = process.cwd()): boolean {
   try {
@@ -182,6 +187,78 @@ export function isAncestor(sha: string, headSha: string, cwd: string = process.c
   } catch {
     return false;
   }
+}
+
+/** Returns true if the repository at `cwd` is a shallow clone, false otherwise. */
+export function isShallowRepository(cwd: string = process.cwd()): boolean {
+  try {
+    const out = execSync("git rev-parse --is-shallow-repository", {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return out.trim() === "true";
+  } catch {
+    return false;
+  }
+}
+
+const DEEPEN_STRATEGIES = [
+  { command: "git fetch --deepen=200 origin", label: "Deepening by 200 commits" },
+  { command: "git fetch --deepen=500 origin", label: "Deepening by 500 commits" },
+  { command: "git fetch --unshallow origin", label: "Fetching full history" },
+];
+
+function deepenUntil(cwd: string, check: () => boolean): boolean {
+  for (const { command, label } of DEEPEN_STRATEGIES) {
+    verbose(label);
+    try {
+      execSync(command, { cwd, stdio: ["ignore", "ignore", "pipe"], timeout: 30_000 });
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      verbose(`Strategy "${label}" failed: ${reason}`);
+      continue;
+    }
+    if (check()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Returns true if `sha` is an ancestor of `headSha`, deepening a shallow clone
+ * as needed to obtain a definitive answer.
+ *
+ * `isAncestor` alone isn't enough on shallow repos: `merge-base --is-ancestor`
+ * exits 1 both for genuine non-ancestors and for walks that hit a shallow graft
+ * before reaching `sha` — the two cases share an exit code. And `commitExists`
+ * can return true for an object that was pulled in as a side-branch boundary
+ * parent even when that commit isn't yet walkable from `headSha`. Disambiguate
+ * by deepening and retrying.
+ */
+export function verifyAncestorReachable(sha: string, headSha: string, cwd: string = process.cwd()): boolean {
+  if (sha === headSha) {
+    return true;
+  }
+
+  const isReachable = () => commitExists(sha, cwd) && isAncestor(sha, headSha, cwd);
+
+  if (isReachable()) {
+    return true;
+  }
+  if (!isShallowRepository(cwd)) {
+    // Deep repo: this negative is real, not a shallow cutoff.
+    return false;
+  }
+
+  verbose(`Cannot confirm ${sha.slice(0, 7)} is an ancestor of ${headSha.slice(0, 7)} on shallow repo; deepening`);
+
+  if (deepenUntil(cwd, isReachable)) {
+    verbose(`Confirmed ${sha.slice(0, 7)} is an ancestor of ${headSha.slice(0, 7)}`);
+    return true;
+  }
+  return false;
 }
 
 const SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
@@ -254,32 +331,11 @@ export function ensureCommitAvailable(sha: string, cwd: string = process.cwd()):
     return;
   }
 
-  const strategies = [
-    {
-      command: "git fetch --deepen=200 origin",
-      label: "Deepening by 200 commits",
-    },
-    {
-      command: "git fetch --deepen=500 origin",
-      label: "Deepening by 500 commits",
-    },
-    { command: "git fetch --unshallow origin", label: "Fetching full history" },
-  ];
-
   verbose(`Commit ${sha} not in local history (likely shallow clone)`);
 
-  for (const { command, label } of strategies) {
-    verbose(label);
-    try {
-      execSync(command, { cwd, stdio: ["ignore", "ignore", "pipe"], timeout: 30_000 });
-      if (commitExists(sha, cwd)) {
-        verbose(`Found commit ${sha}`);
-        return;
-      }
-    } catch (e) {
-      const reason = e instanceof Error ? e.message : String(e);
-      verbose(`Strategy "${label}" failed: ${reason}`);
-    }
+  if (deepenUntil(cwd, () => commitExists(sha, cwd))) {
+    verbose(`Found commit ${sha}`);
+    return;
   }
 
   const currentBranch = getCurrentGitInfo(cwd).branch ?? "unknown";
