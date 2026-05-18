@@ -14,6 +14,7 @@ describe("detectCIEnvironment", () => {
     delete process.env.TF_BUILD;
     delete process.env.BUILDKITE;
     delete process.env.TEAMCITY_VERSION;
+    delete process.env.RWX;
     delete process.env.CI;
   });
 
@@ -59,6 +60,11 @@ describe("detectCIEnvironment", () => {
   it("detects TeamCity", () => {
     process.env.TEAMCITY_VERSION = "2023.05";
     expect(detectCIEnvironment()).toEqual({ name: "teamcity" });
+  });
+
+  it("detects RWX", () => {
+    process.env.RWX = "true";
+    expect(detectCIEnvironment()).toEqual({ name: "rwx" });
   });
 
   it("detects generic CI", () => {

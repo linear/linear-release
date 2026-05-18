@@ -13,6 +13,7 @@ describe("buildUserAgent", () => {
     process.env = { ...originalEnv };
     // Ensure our CI environment is not detected
     delete process.env.GITHUB_ACTIONS;
+    delete process.env.RWX;
     delete process.env.CI;
   });
 
@@ -35,5 +36,11 @@ describe("buildUserAgent", () => {
     process.env.GITLAB_CI = "true";
     const userAgent = buildUserAgent();
     expect(userAgent).toBe("linear-release/1.2.3 (gitlab-ci)");
+  });
+
+  it("builds user agent for RWX", () => {
+    process.env.RWX = "true";
+    const userAgent = buildUserAgent();
+    expect(userAgent).toBe("linear-release/1.2.3 (rwx)");
   });
 });
