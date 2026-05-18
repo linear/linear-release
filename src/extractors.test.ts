@@ -398,6 +398,35 @@ describe("commit message magic word behavior", () => {
   });
 });
 
+describe("bracketed identifier in commit subject", () => {
+  it("extracts identifier from a [KEY-N] prefix on the subject line", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "[ENG-123] My change",
+    });
+    expect(ids(result)).toEqual(["ENG-123"]);
+  });
+
+  it("extracts identifier from a lowercase [key-n] prefix", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "[lin-456] adjust thing",
+    });
+    expect(ids(result)).toEqual(["LIN-456"]);
+  });
+
+  it("does not extract bracketed identifier from elsewhere in the message", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "Title\n\nSee [LIN-999] in the docs",
+    });
+    expect(ids(result)).toEqual([]);
+  });
+});
+
 describe("revert branch handling", () => {
   it("blocks extraction from merge commit with revert branch name", () => {
     const result = extractLinearIssueIdentifiersForCommit({

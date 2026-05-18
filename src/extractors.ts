@@ -35,6 +35,18 @@ const ISSUE_IDENTIFIER_REGEX = new RegExp(
 const LINEAR_ISSUE_URL_REGEX = /https?:\/\/linear\.app\/[\w-]+\/issue\/(\w{1,7}-[0-9]{1,9})(?:\/[\w-]*)*/gi;
 
 /**
+ * Patterns for common manual subject-line conventions that aren't gated by a
+ * magic word. Each regex is anchored to the start of the subject and must
+ * capture team key in group 1 and issue number in group 2.
+ *
+ * Add more entries here as new conventions appear in the wild.
+ */
+const COMMON_SUBJECT_PATTERNS: RegExp[] = [
+  // `[ENG-123] My change`
+  new RegExp(`^\\s*\\[(\\w{1,${MAX_KEY_LENGTH}})-([0-9]{1,9})\\]`, "i"),
+];
+
+/**
  * `git merge --squash` followed by `git commit` writes a body containing this
  * header and then dumps the full message of every commit pulled in via the
  * squash — including upstream history merged into the feature branch via
@@ -161,6 +173,28 @@ function matchAllIdentifiers(text: string): IdentifierMatch[] {
 }
 
 /**
+ * Extract identifiers from common, manually-written subject-line conventions
+ * (e.g. `[ENG-123] My change`). These don't require a magic word — the
+ * convention itself signals intent.
+ */
+function matchCommonSubjectPatterns(message: string): IdentifierMatch[] {
+  const subject = message.split(/\r?\n/)[0] ?? "";
+  const results: IdentifierMatch[] = [];
+  for (const pattern of COMMON_SUBJECT_PATTERNS) {
+    const match = subject.match(pattern);
+    if (!match) continue;
+    const [, teamKey, numberString] = match;
+    if (!teamKey || !numberString) continue;
+    if (Number(numberString).toString().length !== numberString.length) continue;
+    results.push({
+      rawIdentifier: `${teamKey}-${numberString}`,
+      identifier: `${teamKey.toUpperCase()}-${Number(numberString)}`,
+    });
+  }
+  return results;
+}
+
+/**
  * Extract issue identifiers from text only when preceded by a magic word.
  * Processes text line-by-line, matching Linear's detection behavior.
  */
@@ -224,7 +258,7 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): E
   const scanTarget = messageDepth % 2 === 1 ? afterTitle : (commit.message ?? "");
   const message = stripSquashBlock(scanTarget);
   if (message.length > 0) {
-    for (const match of matchMagicWordIdentifiers(message)) {
+    for (const match of [...matchCommonSubjectPatterns(message), ...matchMagicWordIdentifiers(message)]) {
       if (!found.has(match.identifier)) {
         found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
       }
