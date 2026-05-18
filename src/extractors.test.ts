@@ -425,6 +425,33 @@ describe("bracketed identifier in commit subject", () => {
     });
     expect(ids(result)).toEqual([]);
   });
+
+  it("extracts identifier from a parenthesized (KEY-N) prefix on the subject line", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "(ENG-123) My change",
+    });
+    expect(ids(result)).toEqual(["ENG-123"]);
+  });
+
+  it("extracts identifier from a bare KEY-N prefix on the subject line", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "ENG-123 My change",
+    });
+    expect(ids(result)).toEqual(["ENG-123"]);
+  });
+
+  it("does not extract bare prefix when the subject does not start with it", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "My change for ENG-123",
+    });
+    expect(ids(result)).toEqual([]);
+  });
 });
 
 describe("revert branch handling", () => {
