@@ -215,7 +215,7 @@ Path patterns can also be configured in your pipeline settings in Linear. If bot
 2. **Scans commits** between the commit from the last release and the current commit
 3. **Extracts issue identifiers** from branch names and commit messages (e.g., `feat/ENG-123-add-feature`)
 4. **Detects pull/merge request numbers** from commit messages — GitHub `Title (#42)` / `Merge pull request #42`, and GitLab `See merge request <group>/<project>!42` trailers (emitted whenever a merge commit is created)
-5. **Syncs data to Linear** that adds issues to a newly created completed release (continuous pipelines) or the currently in-progress release (scheduled pipelines)
+5. **Syncs data to Linear** that adds issues to a newly created completed release (continuous pipelines) or the currently in-progress release (scheduled pipelines). PR/MR numbers are sent alongside the repository info, and Linear resolves them back to any issues linked to those PRs — so issues attached only via a PR (not mentioned in a commit message or branch name) are still picked up.
 
 **First sync**: when no prior release exists for the pipeline, only the current commit is scanned (there's no previous SHA to bound the range from).
 
