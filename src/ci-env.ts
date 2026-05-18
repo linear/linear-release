@@ -31,6 +31,9 @@ export function detectCIEnvironment(): CIEnvironment | null {
   if (process.env.TEAMCITY_VERSION) {
     return { name: "teamcity" };
   }
+  if (process.env.RWX === "true") {
+    return { name: "rwx" };
+  }
   if (process.env.CI === "true") {
     return { name: "ci" };
   }
