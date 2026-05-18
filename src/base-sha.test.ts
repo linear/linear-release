@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { findBaseSha, type FindBaseShaDeps } from "./base-sha";
-import { commitExists, ensureCommitAvailable, getCommitContextsBetweenShas, isAncestor } from "./git";
+import { getCommitContextsBetweenShas, verifyAncestorReachable } from "./git";
 import type { Release } from "./types";
 
 function runGit(args: string, cwd: string): string {
@@ -75,9 +75,7 @@ describe("findBaseSha", () => {
   beforeAll(() => {
     repo = buildRepo();
     deps = {
-      isAncestor: (sha, head) => isAncestor(sha, head, repo.cwd),
-      commitExists: (sha) => commitExists(sha, repo.cwd),
-      ensureCommitAvailable: (sha) => ensureCommitAvailable(sha, repo.cwd),
+      verifyAncestorReachable: (sha, head) => verifyAncestorReachable(sha, head, repo.cwd),
     };
   });
 
@@ -132,6 +130,67 @@ describe("findBaseSha", () => {
 });
 
 /**
+ * Same topology as scenario B but inside a true shallow clone of just HEAD
+ * (depth=1, detached HEAD, default refspec — the shape actions/checkout@v4
+ * produces for PR/tag/single-SHA builds). The trap: side-branch deepening
+ * pulls A's object into the DB as B's boundary parent without extending
+ * main's shallow graft, so `commitExists(A)` is true but A is still beyond
+ * the walk horizon from C. See `verifyAncestorReachable` in `git.ts`.
+ */
+describe("findBaseSha — shallow clone with sibling release branch", () => {
+  let origin: string;
+  let ci: string;
+  let A: string; // 1.52.0 on main, ~252 commits before HEAD
+  let B: string; // 1.52.1 on release/1.52, NOT on main
+  let C: string; // 1.53.0 HEAD on main
+  let deps: FindBaseShaDeps;
+
+  beforeAll(() => {
+    origin = mkdtempSync(join(tmpdir(), "lr-origin-shallow-"));
+    runGit("init -q -b main", origin);
+    runGit('config user.email "t@t"', origin);
+    runGit('config user.name "t"', origin);
+    commit(origin, "f", "0", "root");
+    A = commit(origin, "f", "A", "A (1.52.0 release on main)");
+
+    runGit(`checkout -q -b release/1.52 ${A}`, origin);
+    B = commit(origin, "f", "B", "B (1.52.1 hotfix on release/1.52)");
+
+    // 250 main commits past A so A sits beyond the first deepen step (200).
+    runGit("checkout -q main", origin);
+    for (let i = 0; i < 250; i++) commit(origin, `m${i}`, `${i}`, `main commit ${i}`);
+    C = commit(origin, "f", "C", "C (1.53.0 HEAD on main)");
+
+    // file:// forces the wire protocol so --depth actually applies — local
+    // paths hardlink the full pack. The default `+refs/heads/*` refspec stays
+    // present so subsequent fetches pull all branches, including release/1.52.
+    ci = mkdtempSync(join(tmpdir(), "lr-ci-shallow-"));
+    runGit("init -q", ci);
+    runGit(`remote add origin "file://${origin}"`, ci);
+    runGit(`config --add remote.origin.fetch "+${C}:refs/remotes/pull/0"`, ci);
+    runGit(`fetch --no-tags --prune --depth=1 origin "+${C}:refs/remotes/pull/0"`, ci);
+    runGit(`checkout --force ${C}`, ci);
+
+    deps = {
+      verifyAncestorReachable: (sha, head) => verifyAncestorReachable(sha, head, ci),
+    };
+  });
+
+  afterAll(() => {
+    if (origin) rmSync(origin, { recursive: true, force: true });
+    if (ci) rmSync(ci, { recursive: true, force: true });
+  });
+
+  it("picks main-train release A even though A's object was pulled in as a side-branch boundary", () => {
+    const candidates = [
+      release("1.52.1", B, 3), // side-branch candidate first (sorted by createdAt DESC)
+      release("1.52.0", A, 10),
+    ];
+    expect(findBaseSha(candidates, C, deps)).toEqual({ kind: "found", sha: A });
+  });
+});
+
+/**
  * Pairs scenario B's base selection with the actual `git log` range
  * computation: instead of asserting only on the picked SHA, feed it into
  * `getCommitContextsBetweenShas` and check the resulting commit list. Makes
@@ -147,9 +206,7 @@ describe("end-to-end: concurrent trains", () => {
   beforeAll(() => {
     repo = buildRepo();
     deps = {
-      isAncestor: (sha, head) => isAncestor(sha, head, repo.cwd),
-      commitExists: (sha) => commitExists(sha, repo.cwd),
-      ensureCommitAvailable: (sha) => ensureCommitAvailable(sha, repo.cwd),
+      verifyAncestorReachable: (sha, head) => verifyAncestorReachable(sha, head, repo.cwd),
     };
     // Hotfix sorts ahead of the main-train release in the candidate list.
     candidates = [release("1.70.1", repo.hotfixSha, 3), release("1.71.0", repo.mainPrev, 10)];
