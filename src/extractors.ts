@@ -403,6 +403,17 @@ export function getCommitSubject(message: string | null | undefined): string {
 }
 
 /**
+ * Returns the subject with any `Revert "..."` wrapping stripped. For a
+ * non-revert commit this is just the subject; for a revert it's the subject of
+ * the commit being reverted. Callers that want to match against what the
+ * change is *about* (not the revert mechanics) should use this.
+ */
+export function getEffectiveSubject(message: string | null | undefined): string {
+  if (!message) return "";
+  return parseRevertMessage(message).inner;
+}
+
+/**
  * Unwrap `Revert "..."` layers on the subject line only. Scanning the whole
  * message would let a stray `"` in the body extend the capture past the real
  * subject. `afterTitle` is everything outside the unwrapped subject (trailing

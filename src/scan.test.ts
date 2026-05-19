@@ -199,5 +199,33 @@ describe("scanCommits", () => {
       const result = scanCommits([{ sha: "c1", message: "anything" }], null, null);
       expect(result.debugSink.includeMessages).toBeNull();
     });
+
+    it("matches the inner subject of a revert so revert detection is not bypassed", () => {
+      const commits: CommitContext[] = [
+        { sha: "a1", message: "fix: login bug. Fixes ENG-100" },
+        { sha: "r1", message: 'Revert "fix: login bug. Fixes ENG-100"' },
+      ];
+      const result = scanCommits(commits, null, "^(feat|fix):");
+      expect(ids(result.issueReferences)).toEqual([]);
+      expect(ids(result.revertedIssueReferences)).toEqual(["ENG-100"]);
+    });
+
+    it("matches the inner subject through nested revert wrappers", () => {
+      const commits: CommitContext[] = [
+        {
+          sha: "ra1",
+          message: 'Revert "Revert "fix: login bug. Fixes ENG-100""',
+        },
+      ];
+      const result = scanCommits(commits, null, "^(feat|fix):");
+      expect(ids(result.issueReferences)).toEqual(["ENG-100"]);
+    });
+
+    it("still skips commits whose inner subject does not match", () => {
+      const commits: CommitContext[] = [{ sha: "r1", message: 'Revert "chore: bump deps. Fixes ENG-200"' }];
+      const result = scanCommits(commits, null, "^(feat|fix):");
+      expect(ids(result.issueReferences)).toEqual([]);
+      expect(ids(result.revertedIssueReferences)).toEqual([]);
+    });
   });
 });

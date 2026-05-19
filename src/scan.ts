@@ -2,7 +2,7 @@ import {
   extractLinearIssueIdentifiersForCommit,
   extractPullRequestNumbersForCommit,
   extractRevertedIssueIdentifiersForCommit,
-  getCommitSubject,
+  getEffectiveSubject,
 } from "./extractors";
 import { verbose } from "./log";
 import { CommitContext, DebugSink, IssueReference, PullRequestSource } from "./types";
@@ -39,7 +39,7 @@ export function scanCommits(
 
   for (const commit of commits) {
     if (messageRegex) {
-      const subject = getCommitSubject(commit.message);
+      const subject = getEffectiveSubject(commit.message);
       if (!messageRegex.test(subject)) {
         verbose(`Skipping commit ${commit.sha} — subject does not match --include-messages`);
         continue;
