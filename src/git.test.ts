@@ -191,6 +191,36 @@ describe("parseRepoUrl", () => {
       });
     });
 
+    it("should parse gitlab.com HTTPS URL with nested groups", () => {
+      const result = parseRepoUrl("https://gitlab.com/my-org/my-group/my-repo.git");
+      expect(result).toEqual({
+        owner: "my-org",
+        name: "my-group/my-repo",
+        provider: "gitlab",
+        url: "https://gitlab.com/my-org/my-group/my-repo",
+      });
+    });
+
+    it("should parse gitlab.com HTTPS URL with deeply nested groups", () => {
+      const result = parseRepoUrl("https://gitlab.com/org/group/subgroup/repo.git");
+      expect(result).toEqual({
+        owner: "org",
+        name: "group/subgroup/repo",
+        provider: "gitlab",
+        url: "https://gitlab.com/org/group/subgroup/repo",
+      });
+    });
+
+    it("should parse self-hosted GitLab HTTPS URL with nested groups and no .git suffix", () => {
+      const result = parseRepoUrl("https://gitlab.internal.io/team/platform/service");
+      expect(result).toEqual({
+        owner: "team",
+        name: "platform/service",
+        provider: "gitlab",
+        url: "https://gitlab.internal.io/team/platform/service",
+      });
+    });
+
     it("should parse bitbucket.org HTTPS URL", () => {
       const result = parseRepoUrl("https://bitbucket.org/myorg/myrepo.git");
       expect(result).toEqual({
@@ -270,6 +300,26 @@ describe("parseRepoUrl", () => {
         name: "service",
         provider: "gitlab",
         url: "https://gitlab.internal.io/team/service",
+      });
+    });
+
+    it("should parse gitlab.com SSH URL with nested groups", () => {
+      const result = parseRepoUrl("git@gitlab.com:my-org/my-group/my-repo.git");
+      expect(result).toEqual({
+        owner: "my-org",
+        name: "my-group/my-repo",
+        provider: "gitlab",
+        url: "https://gitlab.com/my-org/my-group/my-repo",
+      });
+    });
+
+    it("should parse gitlab.com SSH URL with deeply nested groups", () => {
+      const result = parseRepoUrl("git@gitlab.com:org/group/subgroup/repo.git");
+      expect(result).toEqual({
+        owner: "org",
+        name: "group/subgroup/repo",
+        provider: "gitlab",
+        url: "https://gitlab.com/org/group/subgroup/repo",
       });
     });
 
