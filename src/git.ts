@@ -431,8 +431,9 @@ function hostToProvider(host: string): string | null {
  * @returns Parsed repo info, or null if the URL could not be parsed.
  */
 export function parseRepoUrl(remoteUrl: string): RepoInfo | null {
-  // Handle HTTPS URLs: https://github.com/owner/repo.git
-  const httpsMatch = remoteUrl.match(/^https?:\/\/(?:[^@]+@)?([^/]+)\/([^/]+)\/([^/]+?)(?:\.git)?$/);
+  // GitLab nested groups: split on the first slash so subgroup paths fold
+  // into the name segment (e.g. owner=group, name=subgroup/repo).
+  const httpsMatch = remoteUrl.match(/^https?:\/\/(?:[^@]+@)?([^/]+)\/([^/]+)\/(.+?)(?:\.git)?$/);
   if (httpsMatch) {
     const host = httpsMatch[1];
     const owner = httpsMatch[2] || null;
@@ -445,8 +446,9 @@ export function parseRepoUrl(remoteUrl: string): RepoInfo | null {
     };
   }
 
-  // Handle SSH URLs: git@github.com:owner/repo.git
-  const sshMatch = remoteUrl.match(/^git@([^:]+):([^/]+)\/([^/]+?)(?:\.git)?$/);
+  // Handle SSH URLs: git@github.com:owner/repo.git (GitLab nested groups
+  // follow the same first-slash split as the HTTPS case above).
+  const sshMatch = remoteUrl.match(/^git@([^:]+):([^/]+)\/(.+?)(?:\.git)?$/);
   if (sshMatch) {
     const host = sshMatch[1];
     const owner = sshMatch[2] || null;
