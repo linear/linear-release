@@ -7,6 +7,11 @@ import {
 import { verbose } from "./log";
 import { CommitContext, DebugSink, IssueReference, PullRequestSource } from "./types";
 
+export type ScanOptions = {
+  includePaths?: string[] | null;
+  includeSubjects?: string | null;
+};
+
 /**
  * Scan commits and produce added/reverted issue references using last-write-wins.
  * Expects commits in chronological order (oldest first). The caller must reverse
@@ -14,14 +19,14 @@ import { CommitContext, DebugSink, IssueReference, PullRequestSource } from "./t
  */
 export function scanCommits(
   commits: CommitContext[],
-  includePaths: string[] | null,
-  includeSubjects: string | null,
+  options: ScanOptions = {},
 ): {
   issueReferences: IssueReference[];
   revertedIssueReferences: IssueReference[];
   prNumbers: number[];
   debugSink: DebugSink;
 } {
+  const { includePaths = null, includeSubjects = null } = options;
   const subjectRegex = includeSubjects ? new RegExp(includeSubjects) : null;
   const lastAction = new Map<string, "added" | "reverted">();
   const addedRefs = new Map<string, IssueReference>();

@@ -34,19 +34,19 @@ describe("scanCommits", () => {
     ];
 
     it("adds identifier when last action is re-add", () => {
-      const result = scanCommits(commits, null, null);
+      const result = scanCommits(commits, {});
       expect(ids(result.issueReferences)).toEqual(["BAC-39"]);
       expect(ids(result.revertedIssueReferences)).toEqual([]);
     });
 
     it("adds identifier when only add commits are present", () => {
-      const result = scanCommits(commits.slice(0, 2), null, null);
+      const result = scanCommits(commits.slice(0, 2), {});
       expect(ids(result.issueReferences)).toEqual(["BAC-39"]);
       expect(ids(result.revertedIssueReferences)).toEqual([]);
     });
 
     it("reverts identifier when add is followed by revert", () => {
-      const result = scanCommits(commits.slice(0, 4), null, null);
+      const result = scanCommits(commits.slice(0, 4), {});
       expect(ids(result.issueReferences)).toEqual([]);
       expect(ids(result.revertedIssueReferences)).toEqual(["BAC-39"]);
     });
@@ -64,7 +64,7 @@ describe("scanCommits", () => {
           message: 'Revert "Fixes DRIVE-320: memory leak in background location service"',
         },
       ];
-      const result = scanCommits(commits, null, null);
+      const result = scanCommits(commits, {});
       expect(ids(result.issueReferences)).toEqual([]);
       expect(ids(result.revertedIssueReferences)).toEqual(["DRIVE-320"]);
     });
@@ -74,7 +74,7 @@ describe("scanCommits", () => {
         { sha: "a1", message: "Bump v1-2 to v1-3" },
         { sha: "r1", message: 'Revert "Bump v1-2 to v1-3"' },
       ];
-      const result = scanCommits(commits, null, null);
+      const result = scanCommits(commits, {});
       expect(ids(result.issueReferences)).toEqual([]);
       expect(ids(result.revertedIssueReferences)).toEqual([]);
     });
@@ -90,7 +90,7 @@ describe("scanCommits", () => {
           message: 'Revert "ENG-200: something"',
         },
       ];
-      const result = scanCommits(commits, null, null);
+      const result = scanCommits(commits, {});
       expect(ids(result.issueReferences)).toEqual(["ENG-100"]);
       expect(ids(result.revertedIssueReferences)).toEqual(["ENG-200"]);
     });
@@ -104,7 +104,7 @@ describe("scanCommits", () => {
           message: 'Revert "ENG-100: fix"',
         },
       ];
-      const result = scanCommits(commits, null, null);
+      const result = scanCommits(commits, {});
       expect(ids(result.issueReferences)).toEqual([]);
       expect(ids(result.revertedIssueReferences)).toEqual(["ENG-100"]);
     });
@@ -118,7 +118,7 @@ describe("scanCommits", () => {
         },
         { sha: "a1", branchName: "user/eng-100" },
       ];
-      const result = scanCommits(commits, null, null);
+      const result = scanCommits(commits, {});
       expect(ids(result.issueReferences)).toEqual(["ENG-100"]);
       expect(ids(result.revertedIssueReferences)).toEqual([]);
     });
@@ -136,7 +136,7 @@ describe("scanCommits", () => {
           message: "Merge pull request #2\n\nFixes ENG-200",
         },
       ];
-      const result = scanCommits(commits, null, null);
+      const result = scanCommits(commits, {});
       expect(ids(result.issueReferences)).toEqual(["ENG-200"]);
       expect(ids(result.revertedIssueReferences)).toEqual(["ENG-100"]);
     });
@@ -146,7 +146,7 @@ describe("scanCommits", () => {
         { sha: "a1", branchName: "user/eng-100", message: "Fixes ENG-100" },
         { sha: "r1", message: 'Revert "Fixes ENG-100"' },
       ];
-      const result = scanCommits(commits, null, null);
+      const result = scanCommits(commits, {});
       expect(ids(result.issueReferences)).toEqual([]);
       expect(ids(result.revertedIssueReferences)).toEqual(["ENG-100"]);
     });
@@ -159,14 +159,14 @@ describe("scanCommits", () => {
         { sha: "c2", message: "chore: bump deps. Fixes ENG-200" },
         { sha: "c3", message: "fix: handle null. Fixes ENG-300" },
       ];
-      const result = scanCommits(commits, null, "^(feat|fix):");
+      const result = scanCommits(commits, { includeSubjects: "^(feat|fix):" });
       expect(ids(result.issueReferences)).toEqual(["ENG-100", "ENG-300"]);
       expect(result.debugSink.inspectedShas).toEqual(["c1", "c3"]);
     });
 
     it("matches against the subject (first line) only, ignoring body", () => {
       const commits: CommitContext[] = [{ sha: "c1", message: "chore: tidy\n\nfeat: ENG-100 add login (in body)" }];
-      const result = scanCommits(commits, null, "^feat:");
+      const result = scanCommits(commits, { includeSubjects: "^feat:" });
       expect(ids(result.issueReferences)).toEqual([]);
       expect(result.debugSink.inspectedShas).toEqual([]);
     });
@@ -176,7 +176,7 @@ describe("scanCommits", () => {
         { sha: "c1", message: "Squash: feat. Fixes ENG-100" },
         { sha: "c2", message: "chore: bump" },
       ];
-      const result = scanCommits(commits, null, "feat");
+      const result = scanCommits(commits, { includeSubjects: "feat" });
       expect(ids(result.issueReferences)).toEqual(["ENG-100"]);
     });
 
@@ -185,18 +185,18 @@ describe("scanCommits", () => {
         { sha: "c1", branchName: "user/eng-100", message: null },
         { sha: "c2", branchName: "user/eng-200", message: "feat: add login" },
       ];
-      const result = scanCommits(commits, null, "^feat:");
+      const result = scanCommits(commits, { includeSubjects: "^feat:" });
       expect(ids(result.issueReferences)).toEqual(["ENG-200"]);
       expect(result.debugSink.inspectedShas).toEqual(["c2"]);
     });
 
     it("records the pattern on the debug sink", () => {
-      const result = scanCommits([{ sha: "c1", message: "feat: x" }], null, "^feat:");
+      const result = scanCommits([{ sha: "c1", message: "feat: x" }], { includeSubjects: "^feat:" });
       expect(result.debugSink.includeSubjects).toBe("^feat:");
     });
 
     it("leaves includeSubjects null when filter is disabled", () => {
-      const result = scanCommits([{ sha: "c1", message: "anything" }], null, null);
+      const result = scanCommits([{ sha: "c1", message: "anything" }], {});
       expect(result.debugSink.includeSubjects).toBeNull();
     });
 
@@ -205,7 +205,7 @@ describe("scanCommits", () => {
         { sha: "a1", message: "fix: login bug. Fixes ENG-100" },
         { sha: "r1", message: 'Revert "fix: login bug. Fixes ENG-100"' },
       ];
-      const result = scanCommits(commits, null, "^(feat|fix):");
+      const result = scanCommits(commits, { includeSubjects: "^(feat|fix):" });
       expect(ids(result.issueReferences)).toEqual([]);
       expect(ids(result.revertedIssueReferences)).toEqual(["ENG-100"]);
     });
@@ -217,13 +217,13 @@ describe("scanCommits", () => {
           message: 'Revert "Revert "fix: login bug. Fixes ENG-100""',
         },
       ];
-      const result = scanCommits(commits, null, "^(feat|fix):");
+      const result = scanCommits(commits, { includeSubjects: "^(feat|fix):" });
       expect(ids(result.issueReferences)).toEqual(["ENG-100"]);
     });
 
     it("still skips commits whose inner subject does not match", () => {
       const commits: CommitContext[] = [{ sha: "r1", message: 'Revert "chore: bump deps. Fixes ENG-200"' }];
-      const result = scanCommits(commits, null, "^(feat|fix):");
+      const result = scanCommits(commits, { includeSubjects: "^(feat|fix):" });
       expect(ids(result.issueReferences)).toEqual([]);
       expect(ids(result.revertedIssueReferences)).toEqual([]);
     });

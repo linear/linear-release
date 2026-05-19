@@ -221,11 +221,10 @@ async function syncCommand(): Promise<{
   // git log returns newest-first; scanCommits needs chronological (oldest-first) for last-write-wins
   commits.reverse();
 
-  const { issueReferences, revertedIssueReferences, prNumbers, debugSink } = scanCommits(
-    commits,
-    effectiveIncludePaths,
+  const { issueReferences, revertedIssueReferences, prNumbers, debugSink } = scanCommits(commits, {
+    includePaths: effectiveIncludePaths,
     includeSubjects,
-  );
+  });
 
   verbose(`Debug sink: ${JSON.stringify(debugSink, null, 2)}`);
 
