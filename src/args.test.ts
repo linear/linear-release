@@ -81,23 +81,23 @@ describe("parseCLIArgs", () => {
     expect(result.includePaths).toEqual(["apps/web/**", "packages/**"]);
   });
 
-  it("defaults --include-messages to null", () => {
+  it("defaults --include-subjects to null", () => {
     const result = parseCLIArgs([]);
-    expect(result.includeMessages).toBeNull();
+    expect(result.includeSubjects).toBeNull();
   });
 
-  it("returns --include-messages as the raw pattern string", () => {
-    const result = parseCLIArgs(["--include-messages", "^(feat|fix):"]);
-    expect(result.includeMessages).toBe("^(feat|fix):");
+  it("returns --include-subjects as the raw pattern string", () => {
+    const result = parseCLIArgs(["--include-subjects", "^(feat|fix):"]);
+    expect(result.includeSubjects).toBe("^(feat|fix):");
   });
 
-  it("treats empty --include-messages as no filter", () => {
-    const result = parseCLIArgs(["--include-messages", ""]);
-    expect(result.includeMessages).toBeNull();
+  it("treats empty --include-subjects as no filter", () => {
+    const result = parseCLIArgs(["--include-subjects", ""]);
+    expect(result.includeSubjects).toBeNull();
   });
 
-  it("throws a helpful error on invalid --include-messages regex", () => {
-    expect(() => parseCLIArgs(["--include-messages", "([unclosed"])).toThrow(/Invalid --include-messages regex/);
+  it("throws a helpful error on invalid --include-subjects regex", () => {
+    expect(() => parseCLIArgs(["--include-subjects", "([unclosed"])).toThrow(/Invalid --include-subjects regex/);
   });
 
   it("throws on unknown flags (strict mode)", () => {

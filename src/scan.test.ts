@@ -152,7 +152,7 @@ describe("scanCommits", () => {
     });
   });
 
-  describe("--include-messages filter", () => {
+  describe("--include-subjects filter", () => {
     it("includes only commits whose subject matches the regex", () => {
       const commits: CommitContext[] = [
         { sha: "c1", message: "feat: add login. Fixes ENG-100" },
@@ -192,12 +192,12 @@ describe("scanCommits", () => {
 
     it("records the pattern on the debug sink", () => {
       const result = scanCommits([{ sha: "c1", message: "feat: x" }], null, "^feat:");
-      expect(result.debugSink.includeMessages).toBe("^feat:");
+      expect(result.debugSink.includeSubjects).toBe("^feat:");
     });
 
-    it("leaves includeMessages null when filter is disabled", () => {
+    it("leaves includeSubjects null when filter is disabled", () => {
       const result = scanCommits([{ sha: "c1", message: "anything" }], null, null);
-      expect(result.debugSink.includeMessages).toBeNull();
+      expect(result.debugSink.includeSubjects).toBeNull();
     });
 
     it("matches the inner subject of a revert so revert detection is not bypassed", () => {

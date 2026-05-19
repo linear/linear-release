@@ -7,7 +7,7 @@ export type ParsedCLIArgs = {
   releaseVersion?: string;
   stageName?: string;
   includePaths: string[];
-  includeMessages: string | null;
+  includeSubjects: string | null;
   jsonOutput: boolean;
   timeoutSeconds: number;
   logLevel: LogLevel;
@@ -21,7 +21,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
       "release-version": { type: "string" },
       stage: { type: "string" },
       "include-paths": { type: "string" },
-      "include-messages": { type: "string" },
+      "include-subjects": { type: "string" },
       json: { type: "boolean", default: false },
       timeout: { type: "string" },
       quiet: { type: "boolean", default: false },
@@ -49,16 +49,16 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
   if (values.quiet) logLevel = LogLevel.Quiet;
   else if (values.verbose) logLevel = LogLevel.Verbose;
 
-  let includeMessages: string | null = null;
-  const rawIncludeMessages = values["include-messages"];
-  if (rawIncludeMessages !== undefined && rawIncludeMessages.length > 0) {
+  let includeSubjects: string | null = null;
+  const rawIncludeSubjects = values["include-subjects"];
+  if (rawIncludeSubjects !== undefined && rawIncludeSubjects.length > 0) {
     try {
-      new RegExp(rawIncludeMessages);
+      new RegExp(rawIncludeSubjects);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
-      throw new Error(`Invalid --include-messages regex: ${detail}`);
+      throw new Error(`Invalid --include-subjects regex: ${detail}`);
     }
-    includeMessages = rawIncludeMessages;
+    includeSubjects = rawIncludeSubjects;
   }
 
   return {
@@ -72,7 +72,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
           .map((p) => p.trim())
           .filter((p) => p.length > 0)
       : [],
-    includeMessages,
+    includeSubjects,
     jsonOutput: values.json ?? false,
     timeoutSeconds,
     logLevel,

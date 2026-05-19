@@ -15,14 +15,14 @@ import { CommitContext, DebugSink, IssueReference, PullRequestSource } from "./t
 export function scanCommits(
   commits: CommitContext[],
   includePaths: string[] | null,
-  includeMessages: string | null,
+  includeSubjects: string | null,
 ): {
   issueReferences: IssueReference[];
   revertedIssueReferences: IssueReference[];
   prNumbers: number[];
   debugSink: DebugSink;
 } {
-  const messageRegex = includeMessages ? new RegExp(includeMessages) : null;
+  const subjectRegex = includeSubjects ? new RegExp(includeSubjects) : null;
   const lastAction = new Map<string, "added" | "reverted">();
   const addedRefs = new Map<string, IssueReference>();
   const revertedRefs = new Map<string, IssueReference>();
@@ -34,14 +34,14 @@ export function scanCommits(
     revertedIssues: {},
     pullRequests: [],
     includePaths,
-    includeMessages,
+    includeSubjects,
   };
 
   for (const commit of commits) {
-    if (messageRegex) {
+    if (subjectRegex) {
       const subject = getEffectiveSubject(commit.message);
-      if (!messageRegex.test(subject)) {
-        verbose(`Skipping commit ${commit.sha} — subject does not match --include-messages`);
+      if (!subjectRegex.test(subject)) {
+        verbose(`Skipping commit ${commit.sha} — subject does not match --include-subjects`);
         continue;
       }
     }
