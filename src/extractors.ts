@@ -182,7 +182,7 @@ function matchAllIdentifiers(text: string): IdentifierMatch[] {
  * convention itself signals intent.
  */
 function matchCommonSubjectPatterns(message: string): IdentifierMatch[] {
-  const subject = message.split(/\r?\n/)[0] ?? "";
+  const subject = getCommitSubject(message);
   const results: IdentifierMatch[] = [];
   for (const pattern of COMMON_SUBJECT_PATTERNS) {
     const match = subject.match(pattern);
@@ -394,6 +394,12 @@ function parseRevertBranch(branchName: string): {
 export function getRevertBranchDepth(branchName: string | null | undefined): number {
   if (!branchName) return 0;
   return parseRevertBranch(branchName).depth;
+}
+
+export function getCommitSubject(message: string | null | undefined): string {
+  if (!message) return "";
+  const newlineIdx = message.search(/\r?\n/);
+  return newlineIdx === -1 ? message : message.slice(0, newlineIdx);
 }
 
 /**
