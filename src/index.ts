@@ -21,7 +21,7 @@ import {
   IssueReference,
   RepoInfo,
 } from "./types";
-import { getCLIWarnings, parseCLIArgs } from "./args";
+import { getCLIWarnings, parseCLIArgs, ReleaseLink } from "./args";
 import { error, info, setJsonMode, setLogLevel, setStderr, verbose, warn } from "./log";
 import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
@@ -51,6 +51,7 @@ Options:
   --release-version=<version>  Release version identifier
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
+  --link <URL|Label=URL>       Add a link to the targeted release (repeatable)
   --base-ref=<ref>           Override sync scan base (exclusive; scans <ref>..HEAD)
   --timeout=<seconds>        Abort if the operation exceeds this duration (default: 60)
   --json                     Output result as JSON (logs emitted as JSON Lines on stderr)
@@ -68,6 +69,8 @@ Examples:
   linear-release complete
   linear-release update --stage=production
   linear-release sync --include-paths="apps/web/**,packages/**"
+  linear-release sync --link "https://ci.example.com/run/123"
+  linear-release sync --link "Pipeline=https://ci.example.com/run/123"
   linear-release sync --base-ref=<last-released-ref> --include-paths="apps/web/**"
 `);
   process.exit(0);
@@ -88,8 +91,18 @@ try {
   error(`${message} (run linear-release --help for usage)`);
   process.exit(1);
 }
-const { command, releaseName, releaseVersion, stageName, baseRef, includePaths, jsonOutput, timeoutSeconds, logLevel } =
-  parsedArgs;
+const {
+  command,
+  releaseName,
+  releaseVersion,
+  stageName,
+  baseRef,
+  includePaths,
+  links,
+  jsonOutput,
+  timeoutSeconds,
+  logLevel,
+} = parsedArgs;
 const cliWarnings = getCLIWarnings(parsedArgs);
 setLogLevel(logLevel);
 if (jsonOutput) {
@@ -99,6 +112,23 @@ if (jsonOutput) {
 
 function formatVersion(release: { version?: string } | null | undefined): string {
   return release?.version ? `version: ${release.version}` : "no version set";
+}
+
+function formatLinkForLog(link: ReleaseLink): string {
+  if (link.label) {
+    return link.label;
+  }
+
+  try {
+    const { hostname } = new URL(link.url);
+    return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
+  } catch {
+    return "unlabeled";
+  }
+}
+
+function formatLinkSummary(linksToFormat: ReleaseLink[]): string {
+  return linksToFormat.length > 0 ? `, links [${linksToFormat.map(formatLinkForLog).join(", ")}]` : "";
 }
 
 const logEnvironmentSummary = () => {
@@ -250,13 +280,13 @@ async function syncCommand(): Promise<{
 
   const repoInfo = getRepoInfo();
 
-  const release = await syncRelease(issueReferences, revertedIssueReferences, prNumbers, repoInfo, debugSink);
+  const release = await syncRelease(issueReferences, revertedIssueReferences, prNumbers, repoInfo, debugSink, links);
   const issueIds = issueReferences.map((f) => f.identifier);
   const parts: string[] = [];
   if (issueIds.length > 0) parts.push(`issues [${issueIds.join(", ")}]`);
   if (prNumbers.length > 0) parts.push(`pull requests [${prNumbers.map((n) => `#${n}`).join(", ")}]`);
-  const attached = parts.length > 0 ? parts.join(", ") : "no new issues or pull requests";
-  info(`Synced to release ${release.name} (${formatVersion(release)}): ${attached}`);
+  const scanned = parts.length > 0 ? parts.join(", ") : "no new issues or pull requests";
+  info(`Synced to release ${release.name} (${formatVersion(release)}): ${scanned}${formatLinkSummary(links)}`);
   if (scanBase.kind === "base-ref") {
     info(`Stored release baseline: ${(release.commitSha ?? currentCommit.commit).slice(0, 7)}`);
   }
@@ -282,10 +312,13 @@ async function completeCommand(): Promise<{
   const result = await completeRelease({
     name: releaseName,
     version: releaseVersion,
-    commitSha,
+    commitSha: commitSha ?? undefined,
+    links,
   });
   if (result.success) {
-    info(`Completed release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)})`);
+    info(
+      `Completed release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)})${formatLinkSummary(links)}`,
+    );
   } else {
     throw new Error("Failed to complete release");
   }
@@ -317,6 +350,7 @@ async function updateCommand(): Promise<{
       stage: stageName,
       version: releaseVersion,
       name: releaseName,
+      links,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -325,7 +359,7 @@ async function updateCommand(): Promise<{
 
   if (result.success) {
     info(
-      `Updated release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)}) to stage ${result.release?.stageName}`,
+      `Updated release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)}) to stage ${result.release?.stageName}${formatLinkSummary(links)}`,
     );
   } else {
     throw new Error("Failed to update release");
@@ -434,6 +468,7 @@ async function syncRelease(
   prNumbers: number[],
   repoInfo: RepoInfo | null,
   debugSink: DebugSink,
+  releaseLinks: ReleaseLink[],
 ): Promise<Release> {
   const currentSha = await getCurrentGitInfo().commit;
   if (!currentSha) {
@@ -469,6 +504,7 @@ async function syncRelease(
         commitSha: currentSha,
         issueReferences,
         revertedIssueReferences: revertedIssueReferences.length > 0 ? revertedIssueReferences : undefined,
+        links: releaseLinks.length > 0 ? releaseLinks : undefined,
         pullRequestReferences: prNumbers.map((number) => ({
           repositoryOwner: owner,
           repositoryName: name,
@@ -495,14 +531,15 @@ async function syncRelease(
 }
 
 async function completeRelease(options: {
-  name?: string | null;
-  version?: string | null;
-  commitSha?: string | null;
+  name?: string;
+  version?: string;
+  commitSha?: string;
+  links: ReleaseLink[];
 }): Promise<{
   success: boolean;
   release: { id: string; name: string; version?: string; url?: string } | null;
 }> {
-  const { name, version, commitSha } = options;
+  const { name, version, commitSha, links: releaseLinks } = options;
 
   const response = await apiRequest<AccessKeyCompleteReleaseResponse>(
     `
@@ -523,6 +560,7 @@ async function completeRelease(options: {
         name,
         version,
         commitSha,
+        links: releaseLinks.length > 0 ? releaseLinks : undefined,
       },
     },
   );
@@ -532,8 +570,9 @@ async function completeRelease(options: {
 
 async function updateReleaseByPipeline(options: {
   stage?: string;
-  version?: string | null;
-  name?: string | null;
+  version?: string;
+  name?: string;
+  links: ReleaseLink[];
 }): Promise<{
   success: boolean;
   release: {
@@ -544,19 +583,11 @@ async function updateReleaseByPipeline(options: {
     stageName: string;
   } | null;
 }> {
-  const { stage, version, name } = options;
-  const versionInput = version ? `, version: "${version}"` : "";
-  const stageInput = stage ? `, stage: "${stage}"` : "";
-  const nameInput = name ? `, name: "${name}"` : "";
-
-  const inputParts = [versionInput, stageInput, nameInput]
-    .filter(Boolean)
-    .map((s) => s.slice(2))
-    .join(", ");
+  const { stage, version, name, links: releaseLinks } = options;
   const response = await apiRequest<AccessKeyUpdateByPipelineResponse>(
     `
-    mutation {
-      releaseUpdateByPipelineByAccessKey(input: { ${inputParts} }) {
+    mutation releaseUpdateByPipelineByAccessKey($input: ReleaseUpdateByPipelineInputBase!) {
+      releaseUpdateByPipelineByAccessKey(input: $input) {
         success
         release {
           id
@@ -570,6 +601,14 @@ async function updateReleaseByPipeline(options: {
       }
     }
     `,
+    {
+      input: {
+        stage,
+        version,
+        name,
+        links: releaseLinks.length > 0 ? releaseLinks : undefined,
+      },
+    },
   );
 
   const result = response.data.releaseUpdateByPipelineByAccessKey;

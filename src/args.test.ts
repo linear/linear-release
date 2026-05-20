@@ -91,6 +91,70 @@ describe("parseCLIArgs", () => {
     expect(result.includePaths).toEqual(["apps/web/**", "packages/**"]);
   });
 
+  it("parses repeatable --link values", () => {
+    const result = parseCLIArgs([
+      "sync",
+      "--link",
+      "Pipeline=https://ci.example.com/run/123?attempt=1",
+      "--link=GitHub release=https://github.com/acme/app/releases/tag/v1.2.0",
+    ]);
+
+    expect(result.links).toEqual([
+      { label: "Pipeline", url: "https://ci.example.com/run/123?attempt=1" },
+      { label: "GitHub release", url: "https://github.com/acme/app/releases/tag/v1.2.0" },
+    ]);
+  });
+
+  it("parses --link with a bare URL and derives the label", () => {
+    const result = parseCLIArgs(["sync", "--link", "https://github.com/acme/app/actions/runs/123"]);
+
+    expect(result.links).toEqual([{ url: "https://github.com/acme/app/actions/runs/123" }]);
+  });
+
+  it("parses --link with a bare URL containing equals signs", () => {
+    const result = parseCLIArgs(["sync", "--link", "https://ci.example.com/run?id=123&attempt=1"]);
+
+    expect(result.links).toEqual([{ url: "https://ci.example.com/run?id=123&attempt=1" }]);
+  });
+
+  it("trims --link labels and URLs", () => {
+    const result = parseCLIArgs(["sync", "--link", " Pipeline = https://ci.example.com/run/123 "]);
+
+    expect(result.links).toEqual([{ label: "Pipeline", url: "https://ci.example.com/run/123" }]);
+  });
+
+  it("throws on --link with neither URL nor label separator", () => {
+    expect(() => parseCLIArgs(["sync", "--link", "not-a-url"])).toThrow('Invalid --link value: "not-a-url"');
+  });
+
+  it("throws on --link with empty label", () => {
+    expect(() => parseCLIArgs(["sync", "--link", "=https://ci.example.com/run/123"])).toThrow(
+      "Link label must not be empty",
+    );
+  });
+
+  it("throws on --link with empty URL", () => {
+    expect(() => parseCLIArgs(["sync", "--link", "Pipeline="])).toThrow("Link URL must not be empty");
+  });
+
+  it("accepts non-http URL schemes and defers protocol validation to the server", () => {
+    const result = parseCLIArgs(["sync", "--link", "Pipeline=ftp://ci.example.com/run/123"]);
+
+    expect(result.links).toEqual([{ label: "Pipeline", url: "ftp://ci.example.com/run/123" }]);
+  });
+
+  it("parses --link with complete", () => {
+    const result = parseCLIArgs(["complete", "--link", "Pipeline=https://ci.example.com/run/123"]);
+
+    expect(result.links).toEqual([{ label: "Pipeline", url: "https://ci.example.com/run/123" }]);
+  });
+
+  it("parses --link with update", () => {
+    const result = parseCLIArgs(["update", "--stage", "production", "--link", "https://ci.example.com/run/123"]);
+
+    expect(result.links).toEqual([{ url: "https://ci.example.com/run/123" }]);
+  });
+
   it("throws on unknown flags (strict mode)", () => {
     expect(() => parseCLIArgs(["--unknown-flag"])).toThrow();
   });

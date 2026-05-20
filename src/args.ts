@@ -1,6 +1,11 @@
 import { parseArgs } from "node:util";
 import { LogLevel } from "./log";
 
+export type ReleaseLink = {
+  label?: string;
+  url: string;
+};
+
 export type ParsedCLIArgs = {
   command: string;
   releaseName?: string;
@@ -8,10 +13,46 @@ export type ParsedCLIArgs = {
   stageName?: string;
   baseRef?: string;
   includePaths: string[];
+  links: ReleaseLink[];
   jsonOutput: boolean;
   timeoutSeconds: number;
   logLevel: LogLevel;
 };
+
+function parseReleaseLink(value: string): ReleaseLink {
+  const bareUrl = parseAbsoluteUrl(value.trim());
+  if (bareUrl) {
+    return { url: bareUrl.href };
+  }
+
+  const separatorIndex = value.indexOf("=");
+  if (separatorIndex === -1) {
+    throw new Error(`Invalid --link value: "${value}". Expected "https://example.com" or "Label=https://example.com".`);
+  }
+  const label = value.slice(0, separatorIndex).trim();
+  const url = value.slice(separatorIndex + 1).trim();
+  if (!label) {
+    throw new Error(`Invalid --link value: "${value}". Link label must not be empty.`);
+  }
+  if (!url) {
+    throw new Error(`Invalid --link value: "${value}". Link URL must not be empty.`);
+  }
+
+  const parsedUrl = parseAbsoluteUrl(url);
+  if (!parsedUrl) {
+    throw new Error(`Invalid --link URL: "${url}". Expected an absolute URL with a scheme (e.g. https://example.com).`);
+  }
+
+  return { label, url: parsedUrl.href };
+}
+
+function parseAbsoluteUrl(value: string): URL | undefined {
+  try {
+    return new URL(value);
+  } catch {
+    return undefined;
+  }
+}
 
 export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
   const { values, positionals } = parseArgs({
@@ -22,6 +63,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
       stage: { type: "string" },
       "base-ref": { type: "string" },
       "include-paths": { type: "string" },
+      link: { type: "string", multiple: true },
       json: { type: "boolean", default: false },
       timeout: { type: "string" },
       quiet: { type: "boolean", default: false },
@@ -49,8 +91,11 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
   if (values.quiet) logLevel = LogLevel.Quiet;
   else if (values.verbose) logLevel = LogLevel.Verbose;
 
+  const command = positionals[0] || "sync";
+  const links = (values.link ?? []).map(parseReleaseLink);
+
   return {
-    command: positionals[0] || "sync",
+    command,
     releaseName: values.name,
     releaseVersion: values["release-version"],
     stageName: values.stage,
@@ -61,6 +106,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
           .map((p) => p.trim())
           .filter((p) => p.length > 0)
       : [],
+    links,
     jsonOutput: values.json ?? false,
     timeoutSeconds,
     logLevel,
