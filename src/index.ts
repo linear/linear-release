@@ -194,16 +194,26 @@ async function syncCommand(): Promise<{
       verbose(`Inspecting current commit (${currentCommit.commit})`);
     }
   } else {
-    info(
-      `Found ${commits.length} ${pluralize(commits.length, "commit")} between ${latestSha.slice(0, 7)} and ${currentCommit.commit.slice(0, 7)}`,
-    );
+    const commitNoun = effectiveIncludePaths?.length ? "matching commit" : "commit";
+    if (latestSha === currentCommit.commit) {
+      info(
+        `Inspected current commit ${currentCommit.commit.slice(0, 7)}; found ${commits.length} ${pluralize(commits.length, commitNoun)}`,
+      );
+    } else {
+      info(
+        `Found ${commits.length} ${pluralize(commits.length, commitNoun)} between ${latestSha.slice(0, 7)} and ${currentCommit.commit.slice(0, 7)}`,
+      );
+    }
   }
 
   if (commits.length === 0) {
-    const reason = effectiveIncludePaths?.length
-      ? `matching ${JSON.stringify(effectiveIncludePaths)}`
-      : "in the computed range";
-    info(`No commits found ${reason}. Skipping release creation.`);
+    if (effectiveIncludePaths?.length) {
+      info(
+        `No matching commits found for include paths: ${effectiveIncludePaths.join(", ")}. Skipping release creation.`,
+      );
+    } else {
+      info("No commits found in the computed range. Skipping release creation.");
+    }
     return null;
   }
 
