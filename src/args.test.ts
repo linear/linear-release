@@ -43,6 +43,16 @@ describe("parseCLIArgs", () => {
     expect(result.stageName).toBe("production");
   });
 
+  it("parses --base-ref", () => {
+    const result = parseCLIArgs(["--base-ref", "v1.2.3"]);
+    expect(result.baseRef).toBe("v1.2.3");
+  });
+
+  it("parses --base-ref with = syntax", () => {
+    const result = parseCLIArgs(["--base-ref=main~5"]);
+    expect(result.baseRef).toBe("main~5");
+  });
+
   it("defaults --json to false", () => {
     const result = parseCLIArgs([]);
     expect(result.jsonOutput).toBe(false);

@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import type { CommitContext, GitInfo, RepoInfo } from "./types";
 import { error as logError, verbose, warn } from "./log";
 
@@ -264,6 +264,31 @@ export function verifyAncestorReachable(sha: string, headSha: string, cwd: strin
 const SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
 
 /**
+ * Resolves a git ref, tag, or SHA to a full commit SHA.
+ *
+ * Short/full SHAs in shallow clones may not resolve until history is deepened,
+ * so SHA-like inputs get the same availability treatment as release baselines.
+ */
+export function resolveCommitRef(ref: string, cwd: string = process.cwd()): string {
+  const resolve = () =>
+    execFileSync("git", ["rev-parse", "--verify", `${ref}^{commit}`], {
+      cwd,
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    }).trim();
+
+  try {
+    return resolve();
+  } catch {
+    if (SHA_PATTERN.test(ref)) {
+      ensureCommitAvailable(ref, cwd);
+      return resolve();
+    }
+    throw new Error(`Could not resolve "${ref}" to a commit. Use a valid commit SHA, tag, or ref.`);
+  }
+}
+
+/**
  * Extracts the branch name from a merge commit message.
  * Supports:
  *   - GitHub: "Merge pull request #X from owner/branch-name"
@@ -369,19 +394,21 @@ function runLog(rangeArgs: string, cwd: string): CommitContext[] {
  * `--no-walk` (only when `fromSha === toSha`): without it, `git log -1 <sha>
  * -- <paths>` walks back from `<sha>` to the first ancestor matching the
  * pathspec — silently returning an unrelated commit when `<sha>` itself
- * doesn't match.
+ * doesn't match. Callers that need true `sha..sha` empty-range semantics can
+ * pass `inspectSingleCommit: false`.
  *
  * @param fromSha - Starting commit SHA (exclusive)
  * @param toSha - Ending commit SHA (inclusive)
  * @param options.includePaths - Glob patterns to filter commits by file paths (relative to repo root)
+ * @param options.inspectSingleCommit - When SHAs match, inspect that one commit instead of treating it as an empty range
  * @param options.cwd - Working directory for git commands (defaults to process.cwd())
  */
 export function getCommitContextsBetweenShas(
   fromSha: string,
   toSha: string,
-  options: { includePaths?: string[] | null; cwd?: string } = {},
+  options: { includePaths?: string[] | null; inspectSingleCommit?: boolean; cwd?: string } = {},
 ): CommitContext[] {
-  const { includePaths = null, cwd = process.cwd() } = options;
+  const { includePaths = null, inspectSingleCommit = true, cwd = process.cwd() } = options;
 
   if (!SHA_PATTERN.test(fromSha)) {
     warn(`Invalid "from" SHA format "${fromSha}"`);
@@ -392,9 +419,10 @@ export function getCommitContextsBetweenShas(
     return [];
   }
 
+  const inspectingSingleCommit = fromSha === toSha && inspectSingleCommit;
   const args = [
     includePaths?.length ? "--full-history" : "",
-    fromSha === toSha ? `--no-walk ${toSha}` : `${fromSha}..${toSha}`,
+    inspectingSingleCommit ? `--no-walk ${toSha}` : `${fromSha}..${toSha}`,
     buildPathspecArgs(includePaths),
   ]
     .filter(Boolean)
@@ -402,7 +430,7 @@ export function getCommitContextsBetweenShas(
   const commits = runLog(args, cwd);
 
   if (commits.length === 0) {
-    if (fromSha === toSha) {
+    if (inspectingSingleCommit) {
       const pathFilter = includePaths?.length ? ` include paths: ${includePaths.join(", ")}` : "";
       verbose(`Commit ${toSha.slice(0, 7)} did not match${pathFilter}`);
     } else {
