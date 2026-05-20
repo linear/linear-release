@@ -402,10 +402,13 @@ export function getCommitContextsBetweenShas(
   const commits = runLog(args, cwd);
 
   if (commits.length === 0) {
-    verbose(
-      `No commits found between ${fromSha.slice(0, 7)}..${toSha.slice(0, 7)}` +
-        (includePaths?.length ? ` with paths: ${includePaths.join(", ")}` : ""),
-    );
+    if (fromSha === toSha) {
+      const pathFilter = includePaths?.length ? ` include paths: ${includePaths.join(", ")}` : "";
+      verbose(`Commit ${toSha.slice(0, 7)} did not match${pathFilter}`);
+    } else {
+      const pathFilter = includePaths?.length ? ` matching include paths: ${includePaths.join(", ")}` : "";
+      verbose(`No commits found between ${fromSha.slice(0, 7)}..${toSha.slice(0, 7)}${pathFilter}`);
+    }
   }
 
   return commits;
