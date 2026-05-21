@@ -155,6 +155,7 @@ linear-release update --stage="in review" --name="Release 1.2.0"
 | `--release-version` | `sync`, `complete`, `update` | Release version identifier. For `sync`, defaults to short commit hash. For `complete` and `update`, selects an existing release with that version (errors if none exists); does not change a release's version. If omitted, targets the most recent started release. |
 | `--stage`           | `update`                     | Target deployment stage (required for `update`)                                                                                                                                                                                                                      |
 | `--include-paths`   | `sync`                       | Filter commits by changed file paths                                                                                                                                                                                                                                 |
+| `--link`            | `sync`, `complete`, `update` | Add a link to the targeted release. Use `--link "https://example.com"` or `--link "Label=https://example.com"`; repeat the flag to add multiple links.                                                                                                               |
 | `--base-ref`        | `sync`                       | Override the scan base. Exclusive: scans `<base-ref>..HEAD`.                                                                                                                                                                                                         |
 | `--json`            | `sync`, `complete`, `update` | Output result as JSON on stdout. Logs are emitted as JSON Lines (one object per line) on stderr.                                                                                                                                                                     |
 | `--quiet`           | `sync`, `complete`, `update` | Suppress info-level output. Warnings and errors are still printed.                                                                                                                                                                                                   |
@@ -210,13 +211,33 @@ Patterns use [Git pathspec](https://git-scm.com/docs/gitglossary#Documentation/g
 
 Path patterns can also be configured in your pipeline settings in Linear. If both are set, the CLI `--include-paths` option takes precedence.
 
+### Release Links
+
+`--link` attaches external URLs to the release — a GitHub release page, a CI run, a deployment dashboard.
+
+```bash
+# Bare URL — Linear derives the label ("GitHub" here)
+linear-release sync --link "https://github.com/acme/app/releases/tag/v1.2.0"
+
+# Multiple labeled links
+linear-release sync \
+  --link "CI run=https://ci.example.com/run/123" \
+  --link "Deploy dashboard=https://deploys.example.com/v1.2.0"
+
+# Works on complete and update too
+linear-release complete --release-version="1.2.0" \
+  --link "https://github.com/acme/app/releases/tag/v1.2.0"
+```
+
+Each value is either an absolute URL or `Label=URL`. Both `--link "Label=..."` and `--link="Label=..."` are accepted. `http(s)` is the typical scheme; the server rejects unsafe ones like `javascript:` or `data:`.
+
 ## How It Works
 
 1. **Fetches the latest release** from your Linear pipeline to determine the commit range
 2. **Scans commits** between the commit from the last release and the current commit
 3. **Extracts issue identifiers** from branch names and commit messages (e.g., `feat/ENG-123-add-feature`)
 4. **Detects pull/merge request numbers** from commit messages — GitHub `Title (#42)` / `Merge pull request #42`, and GitLab `See merge request <group>/<project>!42` trailers (emitted whenever a merge commit is created)
-5. **Syncs data to Linear** that adds issues to a newly created completed release (continuous pipelines) or the currently in-progress release (scheduled pipelines). PR/MR numbers are sent alongside the repository info, and Linear resolves them back to any issues linked to those PRs/MRs — so issues attached only via a PR/MR (not mentioned in a commit message or branch name) are still picked up.
+5. **Syncs data to Linear** that adds issues and provided links to a newly created completed release (continuous pipelines) or the currently in-progress release (scheduled pipelines). PR/MR numbers are sent alongside the repository info, and Linear resolves them back to any issues linked to those PRs/MRs — so issues attached only via a PR/MR (not mentioned in a commit message or branch name) are still picked up.
 
 > [!NOTE]
 > **First sync**: when no prior release exists for the pipeline, only the current commit is scanned (there's no previous SHA to bound the range from).
