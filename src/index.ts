@@ -5,10 +5,10 @@ import {
   getCommitContextsBetweenShas,
   getCurrentGitInfo,
   getRepoInfo,
-  resolveFirstSyncBoundary,
+  resolveCommitRef,
   verifyAncestorReachable,
 } from "./git";
-import { findBaseSha } from "./base-sha";
+import { assertBaseRefIsAncestor, ScanBase, selectAutomaticScanBase, shouldCreateReleaseForScan } from "./scan-base";
 import { scanCommits } from "./scan";
 import {
   Release,
@@ -51,6 +51,7 @@ Options:
   --release-version=<version>  Release version identifier
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
+  --base-ref=<ref>           Override sync scan base (exclusive; scans <ref>..HEAD)
   --timeout=<seconds>        Abort if the operation exceeds this duration (default: 60)
   --json                     Output result as JSON (logs emitted as JSON Lines on stderr)
   --quiet                    Suppress info-level output (warnings and errors still printed)
@@ -67,6 +68,7 @@ Examples:
   linear-release complete
   linear-release update --stage=production
   linear-release sync --include-paths="apps/web/**,packages/**"
+  linear-release sync --base-ref=<last-released-ref> --include-paths="apps/web/**"
 `);
   process.exit(0);
 }
@@ -86,7 +88,7 @@ try {
   error(`${message} (run linear-release --help for usage)`);
   process.exit(1);
 }
-const { command, releaseName, releaseVersion, stageName, includePaths, jsonOutput, timeoutSeconds, logLevel } =
+const { command, releaseName, releaseVersion, stageName, baseRef, includePaths, jsonOutput, timeoutSeconds, logLevel } =
   parsedArgs;
 const cliWarnings = getCLIWarnings(parsedArgs);
 setLogLevel(logLevel);
@@ -165,22 +167,33 @@ async function syncCommand(): Promise<{
     throw new Error("Could not get current commit");
   }
 
-  let latestSha = await getLatestSha();
+  const recentReleases = await getRecentReleases();
+  const scanBase = getScanBase(recentReleases, currentCommit.commit);
+  let latestSha = scanBase.sha;
   let inspectingOnlyCurrentCommit = false;
 
-  try {
-    ensureCommitAvailable(latestSha);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    warn(
-      `Could not make sha ${latestSha} available in local git history; falling back to current commit only. ${message}`,
-    );
-    inspectingOnlyCurrentCommit = true;
-    latestSha = currentCommit.commit;
+  if (scanBase.kind === "base-ref") {
+    assertBaseRefIsAncestor(scanBase.ref, latestSha, currentCommit.commit, { verifyAncestorReachable });
+    const includePathSummary = effectiveIncludePaths?.length
+      ? ` with include paths: ${effectiveIncludePaths.join(", ")}`
+      : "";
+    info(`Scanning ${latestSha.slice(0, 7)}..${currentCommit.commit.slice(0, 7)}${includePathSummary}`);
+  } else {
+    try {
+      ensureCommitAvailable(latestSha);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warn(
+        `Could not make sha ${latestSha} available in local git history; falling back to current commit only. ${message}`,
+      );
+      inspectingOnlyCurrentCommit = true;
+      latestSha = currentCommit.commit;
+    }
   }
 
   const commits = getCommitContextsBetweenShas(latestSha, currentCommit.commit, {
     includePaths: effectiveIncludePaths,
+    inspectSingleCommit: scanBase.kind !== "base-ref",
   });
 
   if (inspectingOnlyCurrentCommit) {
@@ -195,7 +208,9 @@ async function syncCommand(): Promise<{
     }
   } else {
     const commitNoun = effectiveIncludePaths?.length ? "matching commit" : "commit";
-    if (latestSha === currentCommit.commit) {
+    if (scanBase.kind === "base-ref") {
+      info(`Found ${commits.length} ${pluralize(commits.length, commitNoun)} in requested range`);
+    } else if (latestSha === currentCommit.commit) {
       info(
         `Inspected current commit ${currentCommit.commit.slice(0, 7)}; found ${commits.length} ${pluralize(commits.length, commitNoun)}`,
       );
@@ -207,14 +222,16 @@ async function syncCommand(): Promise<{
   }
 
   if (commits.length === 0) {
-    if (effectiveIncludePaths?.length) {
-      info(
-        `No matching commits found for include paths: ${effectiveIncludePaths.join(", ")}. Skipping release creation.`,
-      );
-    } else {
-      info("No commits found in the computed range. Skipping release creation.");
+    const reason = effectiveIncludePaths?.length
+      ? `No matching commits found for include paths: ${effectiveIncludePaths.join(", ")}`
+      : scanBase.kind === "base-ref"
+        ? "No commits found in the requested range"
+        : "No commits found in the computed range";
+    if (!shouldCreateReleaseForScan(commits.length, scanBase)) {
+      info(`${reason}. Skipping release creation.`);
+      return null;
     }
-    return null;
+    info(`${reason}. Syncing release anyway because --base-ref was provided to establish the baseline.`);
   }
 
   // git log returns newest-first; scanCommits needs chronological (oldest-first) for last-write-wins
@@ -240,6 +257,9 @@ async function syncCommand(): Promise<{
   if (prNumbers.length > 0) parts.push(`pull requests [${prNumbers.map((n) => `#${n}`).join(", ")}]`);
   const attached = parts.length > 0 ? parts.join(", ") : "no new issues or pull requests";
   info(`Synced to release ${release.name} (${formatVersion(release)}): ${attached}`);
+  if (scanBase.kind === "base-ref") {
+    info(`Stored release baseline: ${(release.commitSha ?? currentCommit.commit).slice(0, 7)}`);
+  }
 
   return {
     release: {
@@ -344,19 +364,25 @@ async function getRecentReleases(): Promise<Release[]> {
   return response.data.recentReleasesByAccessKey;
 }
 
-async function getLatestSha(): Promise<string> {
-  const currentSha = getCurrentGitInfo().commit;
-  if (!currentSha) {
-    throw new Error("Could not get current commit");
+function getScanBase(candidates: Release[], currentSha: string): ScanBase {
+  if (baseRef) {
+    let resolvedSha: string;
+    try {
+      resolvedSha = resolveCommitRef(baseRef);
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      throw new Error(`Invalid --base-ref: ${detail}`);
+    }
+    info(`Using --base-ref ${baseRef} (${resolvedSha.slice(0, 7)}); skipping automatic baseline selection`);
+    return { kind: "base-ref", sha: resolvedSha, ref: baseRef };
   }
 
-  const candidates = await getRecentReleases();
-  const result = findBaseSha(candidates, currentSha, { verifyAncestorReachable });
-  if (result.kind === "found") {
-    return result.sha;
+  const scanBase = selectAutomaticScanBase(candidates, currentSha, { verifyAncestorReachable });
+  if (scanBase.kind !== "first-sync") {
+    return scanBase;
   }
 
-  if (candidates.length === 0) {
+  if (scanBase.candidatesConsidered === 0) {
     verbose("No recent releases found; assuming first sync");
   } else {
     // The candidate list came back non-empty but no entry is reachable from
@@ -368,20 +394,20 @@ async function getLatestSha(): Promise<string> {
     // resolveFirstSyncBoundary, which uses HEAD^1 when HEAD is a merge commit.
     // The follow-up verbose lines below print the boundary that was chosen.
     warn(
-      `No recent release is an ancestor of ${currentSha} (${candidates.length} candidate${
-        candidates.length === 1 ? "" : "s"
-      } considered); falling back to the first-sync scan boundary`,
+      `No recent release is an ancestor of ${currentSha} (${scanBase.candidatesConsidered} ${pluralize(
+        scanBase.candidatesConsidered,
+        "candidate",
+      )} considered); falling back to the first-sync scan boundary`,
     );
   }
   // For a merge HEAD the issue keys live on HEAD^2's branch, not on HEAD
   // itself, so HEAD-only would miss them. Non-merge HEAD carries its own key.
-  const boundary = resolveFirstSyncBoundary(currentSha);
-  if (boundary !== currentSha) {
-    verbose(`Merge HEAD: using HEAD^1 (${boundary}) as the scan boundary`);
+  if (scanBase.sha !== currentSha) {
+    verbose(`Merge HEAD: using HEAD^1 (${scanBase.sha}) as the scan boundary`);
   } else {
     verbose("Inspecting current commit only");
   }
-  return boundary;
+  return scanBase;
 }
 
 async function getPipelineSettings(): Promise<{

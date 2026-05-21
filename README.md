@@ -155,6 +155,7 @@ linear-release update --stage="in review" --name="Release 1.2.0"
 | `--release-version` | `sync`, `complete`, `update` | Release version identifier. For `sync`, defaults to short commit hash. For `complete` and `update`, selects an existing release with that version (errors if none exists); does not change a release's version. If omitted, targets the most recent started release. |
 | `--stage`           | `update`                     | Target deployment stage (required for `update`)                                                                                                                                                                                                                      |
 | `--include-paths`   | `sync`                       | Filter commits by changed file paths                                                                                                                                                                                                                                 |
+| `--base-ref`        | `sync`                       | Override the scan base. Exclusive: scans `<base-ref>..HEAD`.                                                                                                                                                                                                         |
 | `--json`            | `sync`, `complete`, `update` | Output result as JSON on stdout. Logs are emitted as JSON Lines (one object per line) on stderr.                                                                                                                                                                     |
 | `--quiet`           | `sync`, `complete`, `update` | Suppress info-level output. Warnings and errors are still printed.                                                                                                                                                                                                   |
 | `--verbose`         | `sync`, `complete`, `update` | Print detailed progress including debug diagnostics                                                                                                                                                                                                                  |
@@ -220,10 +221,23 @@ Path patterns can also be configured in your pipeline settings in Linear. If bot
 > [!NOTE]
 > **First sync**: when no prior release exists for the pipeline, only the current commit is scanned (there's no previous SHA to bound the range from).
 
+### Overriding the Scan Base
+
+Use `--base-ref` to explicitly choose the exclusive lower bound for `sync`'s commit scan. This is useful when the automatically selected release baseline is not the range you want for a custom branching workflow, first-time onboarding, or migration.
+
+```bash
+linear-release sync --base-ref=<last-released-ref> --include-paths="apps/api/**"
+```
+
+The base ref is exclusive: linear-release scans `<base-ref>..HEAD`, matching Git range syntax, and still applies any configured path filters. Pass the last commit, tag, or ref that should be treated as already released, not the first commit you want included.
+
+When `--base-ref` is provided, it overrides automatic base selection for that run. After sync, current `HEAD` is stored as the future release baseline. Choosing an older or newer base can reattach or skip commits, so use this only when you intentionally want to own the scan range.
+
 ## Troubleshooting
 
 - **Unexpected release was updated/completed**: pass `--release-version` explicitly so the command does not target the latest started/planned release.
-- **No release created by `sync`**: if no commits match the computed range (or path filters), `sync` returns `{"release":null}`.
+- **No release created by `sync`**: without `--base-ref`, if no commits match the computed range (or path filters), `sync` returns `{"release":null}`.
+- **Need to backfill the first release, migrate rewritten history, or override the inferred range**: run `sync` with `--base-ref=<ref>` to set an explicit scan base.
 - **Stage update fails**: `--stage` matches first by exact name, then case-insensitively with dashes and underscores treated as spaces. If multiple stages normalize to the same value, pass the exact stage name to disambiguate.
 - **`sync --release-version` fails because the matching release is archived**: restore the archived release in Linear before re-syncing.
 - **Operation timed out**: the CLI aborts after 60 seconds by default. For large repositories or slow networks, increase the limit with `--timeout=120`.
