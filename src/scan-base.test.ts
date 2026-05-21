@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getCommitContextsBetweenShas, resolveCommitRef, verifyAncestorReachable } from "./git";
 import {
-  assertBaseRefIsAncestor,
-  assertBaseRefAllowed,
+  assertInitialBaseRefIsAncestor,
+  assertInitialBaseRefAllowed,
   type ScanBase,
   selectAutomaticScanBase,
   shouldCreateReleaseForScan,
@@ -72,18 +72,20 @@ describe("scan base selection", () => {
     rmSync(repo.cwd, { recursive: true, force: true });
   });
 
-  it("rejects --base-ref when a reachable release baseline already exists", () => {
-    expect(() => assertBaseRefAllowed([release("1.0.0", repo.commits.api1)], repo.commits.head, deps)).toThrow(
+  it("rejects --initial-base-ref when a reachable release baseline already exists", () => {
+    expect(() => assertInitialBaseRefAllowed([release("1.0.0", repo.commits.api1)], repo.commits.head, deps)).toThrow(
       "already has a reachable release baseline",
     );
   });
 
-  it("allows --base-ref when previous release baselines are unreachable", () => {
-    expect(assertBaseRefAllowed([release("legacy", repo.commits.stale)], repo.commits.head, deps)).toBe("unreachable");
+  it("allows --initial-base-ref when previous release baselines are unreachable", () => {
+    expect(assertInitialBaseRefAllowed([release("legacy", repo.commits.stale)], repo.commits.head, deps)).toBe(
+      "unreachable",
+    );
   });
 
-  it("allows --base-ref when no previous release baseline exists", () => {
-    expect(assertBaseRefAllowed([], repo.commits.head, deps)).toBe("none");
+  it("allows --initial-base-ref when no previous release baseline exists", () => {
+    expect(assertInitialBaseRefAllowed([], repo.commits.head, deps)).toBe("none");
   });
 
   it("resolves git refs to commit SHAs", () => {
@@ -91,7 +93,7 @@ describe("scan base selection", () => {
     expect(resolveCommitRef("main~1", repo.cwd)).toBe(repo.commits.web);
   });
 
-  it("uses --base-ref as an exclusive scan base with include paths", () => {
+  it("uses --initial-base-ref as an exclusive scan base with include paths", () => {
     const commits = getCommitContextsBetweenShas(repo.commits.api1, repo.commits.head, {
       includePaths: ["apps/api/**"],
       cwd: repo.cwd,
@@ -108,7 +110,7 @@ describe("scan base selection", () => {
     expect(commits.map((c) => c.sha)).toEqual([repo.commits.api2, repo.commits.web, repo.commits.api1]);
   });
 
-  it("treats --base-ref equal to HEAD as an empty range", () => {
+  it("treats --initial-base-ref equal to HEAD as an empty range", () => {
     const commits = getCommitContextsBetweenShas(repo.commits.head, repo.commits.head, {
       includePaths: ["apps/api/**"],
       inspectSingleCommit: false,
@@ -118,12 +120,12 @@ describe("scan base selection", () => {
     expect(commits).toEqual([]);
   });
 
-  it("still creates a release for an accepted --base-ref scan with zero matching commits", () => {
+  it("still creates a release for an accepted --initial-base-ref scan with zero matching commits", () => {
     const commits = getCommitContextsBetweenShas(repo.commits.api1, repo.commits.head, {
       includePaths: ["does-not-match/**"],
       cwd: repo.cwd,
     });
-    const scanBase: ScanBase = { kind: "base-ref", sha: repo.commits.api1, ref: "api-start" };
+    const scanBase: ScanBase = { kind: "initial-base-ref", sha: repo.commits.api1, ref: "api-start" };
 
     expect(commits).toEqual([]);
     expect(shouldCreateReleaseForScan(commits.length, scanBase)).toBe(true);
@@ -138,8 +140,8 @@ describe("scan base selection", () => {
     expect(() => resolveCommitRef("missing-ref", repo.cwd)).toThrow('Could not resolve "missing-ref"');
   });
 
-  it("fails clearly when --base-ref resolves outside the current branch history", () => {
-    expect(() => assertBaseRefIsAncestor("stale", repo.commits.stale, repo.commits.head, deps)).toThrow(
+  it("fails clearly when --initial-base-ref resolves outside the current branch history", () => {
+    expect(() => assertInitialBaseRefIsAncestor("stale", repo.commits.stale, repo.commits.head, deps)).toThrow(
       "is not an ancestor of HEAD",
     );
   });

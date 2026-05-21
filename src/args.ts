@@ -6,7 +6,7 @@ export type ParsedCLIArgs = {
   releaseName?: string;
   releaseVersion?: string;
   stageName?: string;
-  baseRef?: string;
+  initialBaseRef?: string;
   includePaths: string[];
   jsonOutput: boolean;
   timeoutSeconds: number;
@@ -20,7 +20,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
       name: { type: "string" },
       "release-version": { type: "string" },
       stage: { type: "string" },
-      "base-ref": { type: "string" },
+      "initial-base-ref": { type: "string" },
       "include-paths": { type: "string" },
       json: { type: "boolean", default: false },
       timeout: { type: "string" },
@@ -54,7 +54,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
     releaseName: values.name,
     releaseVersion: values["release-version"],
     stageName: values.stage,
-    baseRef: values["base-ref"],
+    initialBaseRef: values["initial-base-ref"],
     includePaths: values["include-paths"]
       ? values["include-paths"]
           .split(",")
