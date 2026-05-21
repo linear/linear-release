@@ -139,6 +139,34 @@ describe("scan base selection", () => {
     expect(() => resolveCommitRef("missing-ref", repo.cwd)).toThrow('Could not resolve "missing-ref"');
   });
 
+  it("fetches a tag from origin when it is missing from a shallow clone", () => {
+    const remote = mkdtempSync(join(tmpdir(), "linear-release-shallow-remote-"));
+    runGit(["init", "-q", "-b", "main"], remote);
+    runGit(["config", "user.email", "test@example.com"], remote);
+    runGit(["config", "user.name", "Test User"], remote);
+    const tagged = commit(remote, "old.txt", "old", "tagged commit");
+    runGit(["tag", "v9.9.9"], remote);
+    commit(remote, "new1.txt", "new1", "after tag 1");
+    commit(remote, "new2.txt", "new2", "after tag 2");
+
+    const shallow = mkdtempSync(join(tmpdir(), "linear-release-shallow-clone-"));
+    runGit(["clone", "-q", "--depth", "1", "--single-branch", `file://${remote}`, shallow], tmpdir());
+
+    try {
+      expect(() =>
+        execFileSync("git", ["rev-parse", "--verify", "v9.9.9^{commit}"], {
+          cwd: shallow,
+          stdio: ["ignore", "pipe", "ignore"],
+        }),
+      ).toThrow();
+
+      expect(resolveCommitRef("v9.9.9", shallow)).toBe(tagged);
+    } finally {
+      rmSync(remote, { recursive: true, force: true });
+      rmSync(shallow, { recursive: true, force: true });
+    }
+  });
+
   it("fails clearly when --base-ref resolves outside the current branch history", () => {
     expect(() => assertBaseRefIsAncestor("stale", repo.commits.stale, repo.commits.head, deps)).toThrow(
       "is not an ancestor of HEAD",

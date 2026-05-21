@@ -266,12 +266,14 @@ const SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
 /**
  * Resolves a git ref, tag, or SHA to a full commit SHA.
  *
- * Short/full SHAs in shallow clones may not resolve until history is deepened,
- * so SHA-like inputs get the same availability treatment as release baselines.
+ * Shallow or single-branch clones often lack the target locally:
+ *   - SHA-like inputs: deepen history until the commit is reachable.
+ *   - Tag or branch refs: `git fetch origin <ref>` populates FETCH_HEAD with
+ *     the resolved commit for both kinds, without needing to know which.
  */
 export function resolveCommitRef(ref: string, cwd: string = process.cwd()): string {
-  const resolve = () =>
-    execFileSync("git", ["rev-parse", "--verify", `${ref}^{commit}`], {
+  const resolve = (target: string = ref) =>
+    execFileSync("git", ["rev-parse", "--verify", `${target}^{commit}`], {
       cwd,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
@@ -284,7 +286,17 @@ export function resolveCommitRef(ref: string, cwd: string = process.cwd()): stri
       ensureCommitAvailable(ref, cwd);
       return resolve();
     }
-    throw new Error(`Could not resolve "${ref}" to a commit. Use a valid commit SHA, tag, or ref.`);
+    try {
+      verbose(`Ref "${ref}" not in local history; fetching from origin`);
+      execFileSync("git", ["fetch", "origin", ref], {
+        cwd,
+        stdio: ["ignore", "ignore", "ignore"],
+        timeout: 30_000,
+      });
+      return resolve("FETCH_HEAD");
+    } catch {
+      throw new Error(`Could not resolve "${ref}" to a commit. Use a valid commit SHA, tag, or ref.`);
+    }
   }
 }
 

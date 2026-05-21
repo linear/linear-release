@@ -373,8 +373,7 @@ function getScanBase(candidates: Release[], currentSha: string): ScanBase {
       const detail = e instanceof Error ? e.message : String(e);
       throw new Error(`Invalid --base-ref: ${detail}`);
     }
-    warn("--base-ref provided; skipping automatic release baseline selection");
-    info(`Using --base-ref ${baseRef} resolved to ${resolvedSha.slice(0, 7)}`);
+    info(`Using --base-ref ${baseRef} (${resolvedSha.slice(0, 7)}); skipping automatic baseline selection`);
     return { kind: "base-ref", sha: resolvedSha, ref: baseRef };
   }
 
