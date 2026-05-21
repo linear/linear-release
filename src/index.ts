@@ -8,13 +8,7 @@ import {
   resolveCommitRef,
   verifyAncestorReachable,
 } from "./git";
-import {
-  assertInitialBaseRefIsAncestor,
-  assertInitialBaseRefAllowed,
-  ScanBase,
-  selectAutomaticScanBase,
-  shouldCreateReleaseForScan,
-} from "./scan-base";
+import { assertBaseRefIsAncestor, ScanBase, selectAutomaticScanBase, shouldCreateReleaseForScan } from "./scan-base";
 import { scanCommits } from "./scan";
 import {
   Release,
@@ -57,7 +51,7 @@ Options:
   --release-version=<version>  Release version identifier
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
-  --initial-base-ref=<ref>   One-time sync base for initialization/migration (exclusive; scans <ref>..HEAD)
+  --base-ref=<ref>           Override sync scan base (exclusive; scans <ref>..HEAD)
   --timeout=<seconds>        Abort if the operation exceeds this duration (default: 60)
   --json                     Output result as JSON (logs emitted as JSON Lines on stderr)
   --quiet                    Suppress info-level output (warnings and errors still printed)
@@ -74,7 +68,7 @@ Examples:
   linear-release complete
   linear-release update --stage=production
   linear-release sync --include-paths="apps/web/**,packages/**"
-  linear-release sync --initial-base-ref=<last-released-ref> --include-paths="apps/web/**"
+  linear-release sync --base-ref=<last-released-ref> --include-paths="apps/web/**"
 `);
   process.exit(0);
 }
@@ -94,17 +88,8 @@ try {
   error(`${message} (run linear-release --help for usage)`);
   process.exit(1);
 }
-const {
-  command,
-  releaseName,
-  releaseVersion,
-  stageName,
-  initialBaseRef,
-  includePaths,
-  jsonOutput,
-  timeoutSeconds,
-  logLevel,
-} = parsedArgs;
+const { command, releaseName, releaseVersion, stageName, baseRef, includePaths, jsonOutput, timeoutSeconds, logLevel } =
+  parsedArgs;
 const cliWarnings = getCLIWarnings(parsedArgs);
 setLogLevel(logLevel);
 if (jsonOutput) {
@@ -187,8 +172,8 @@ async function syncCommand(): Promise<{
   let latestSha = scanBase.sha;
   let inspectingOnlyCurrentCommit = false;
 
-  if (scanBase.kind === "initial-base-ref") {
-    assertInitialBaseRefIsAncestor(scanBase.ref, latestSha, currentCommit.commit, { verifyAncestorReachable });
+  if (scanBase.kind === "base-ref") {
+    assertBaseRefIsAncestor(scanBase.ref, latestSha, currentCommit.commit, { verifyAncestorReachable });
     const includePathSummary = effectiveIncludePaths?.length
       ? ` with include paths: ${effectiveIncludePaths.join(", ")}`
       : "";
@@ -208,7 +193,7 @@ async function syncCommand(): Promise<{
 
   const commits = getCommitContextsBetweenShas(latestSha, currentCommit.commit, {
     includePaths: effectiveIncludePaths,
-    inspectSingleCommit: scanBase.kind !== "initial-base-ref",
+    inspectSingleCommit: scanBase.kind !== "base-ref",
   });
 
   if (inspectingOnlyCurrentCommit) {
@@ -223,7 +208,7 @@ async function syncCommand(): Promise<{
     }
   } else {
     const commitNoun = effectiveIncludePaths?.length ? "matching commit" : "commit";
-    if (scanBase.kind === "initial-base-ref") {
+    if (scanBase.kind === "base-ref") {
       info(`Found ${commits.length} ${pluralize(commits.length, commitNoun)} in requested range`);
     } else if (latestSha === currentCommit.commit) {
       info(
@@ -239,14 +224,14 @@ async function syncCommand(): Promise<{
   if (commits.length === 0) {
     const reason = effectiveIncludePaths?.length
       ? `No matching commits found for include paths: ${effectiveIncludePaths.join(", ")}`
-      : scanBase.kind === "initial-base-ref"
+      : scanBase.kind === "base-ref"
         ? "No commits found in the requested range"
         : "No commits found in the computed range";
     if (!shouldCreateReleaseForScan(commits.length, scanBase)) {
       info(`${reason}. Skipping release creation.`);
       return null;
     }
-    info(`${reason}. Syncing release anyway because --initial-base-ref was provided to establish the baseline.`);
+    info(`${reason}. Syncing release anyway because --base-ref was provided to establish the baseline.`);
   }
 
   // git log returns newest-first; scanCommits needs chronological (oldest-first) for last-write-wins
@@ -272,7 +257,7 @@ async function syncCommand(): Promise<{
   if (prNumbers.length > 0) parts.push(`pull requests [${prNumbers.map((n) => `#${n}`).join(", ")}]`);
   const attached = parts.length > 0 ? parts.join(", ") : "no new issues or pull requests";
   info(`Synced to release ${release.name} (${formatVersion(release)}): ${attached}`);
-  if (scanBase.kind === "initial-base-ref") {
+  if (scanBase.kind === "base-ref") {
     info(`Stored release baseline: ${(release.commitSha ?? currentCommit.commit).slice(0, 7)}`);
   }
 
@@ -380,22 +365,17 @@ async function getRecentReleases(): Promise<Release[]> {
 }
 
 function getScanBase(candidates: Release[], currentSha: string): ScanBase {
-  if (initialBaseRef) {
-    const previousBaseline = assertInitialBaseRefAllowed(candidates, currentSha, { verifyAncestorReachable });
+  if (baseRef) {
     let resolvedSha: string;
     try {
-      resolvedSha = resolveCommitRef(initialBaseRef);
+      resolvedSha = resolveCommitRef(baseRef);
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
-      throw new Error(`Invalid --initial-base-ref: ${detail}`);
+      throw new Error(`Invalid --base-ref: ${detail}`);
     }
-    info(`Using --initial-base-ref ${initialBaseRef} resolved to ${resolvedSha.slice(0, 7)}`);
-    if (previousBaseline === "unreachable") {
-      warn("No reachable previous release baseline found; using --initial-base-ref as the scan base");
-    } else {
-      verbose("No recent releases found; using --initial-base-ref as the scan base");
-    }
-    return { kind: "initial-base-ref", sha: resolvedSha, ref: initialBaseRef };
+    warn("--base-ref provided; skipping automatic release baseline selection");
+    info(`Using --base-ref ${baseRef} resolved to ${resolvedSha.slice(0, 7)}`);
+    return { kind: "base-ref", sha: resolvedSha, ref: baseRef };
   }
 
   const scanBase = selectAutomaticScanBase(candidates, currentSha, { verifyAncestorReachable });

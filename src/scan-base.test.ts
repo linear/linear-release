@@ -5,13 +5,11 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getCommitContextsBetweenShas, resolveCommitRef, verifyAncestorReachable } from "./git";
 import {
-  assertInitialBaseRefIsAncestor,
-  assertInitialBaseRefAllowed,
+  assertBaseRefIsAncestor,
   type ScanBase,
   selectAutomaticScanBase,
   shouldCreateReleaseForScan,
 } from "./scan-base";
-import type { Release } from "./types";
 
 function runGit(args: string[], cwd: string): string {
   return execFileSync("git", args, {
@@ -27,15 +25,6 @@ function commit(cwd: string, file: string, content: string, message: string): st
   runGit(["add", "."], cwd);
   runGit(["commit", "-m", message], cwd);
   return runGit(["rev-parse", "HEAD"], cwd);
-}
-
-function release(name: string, commitSha: string): Release {
-  return {
-    id: `release-${name}`,
-    name,
-    commitSha,
-    createdAt: new Date().toISOString(),
-  };
 }
 
 function createMigrationRepo() {
@@ -58,6 +47,32 @@ function createMigrationRepo() {
   return { cwd, commits: { root, api1, web, api2, head, stale } };
 }
 
+function createGitFlowHotfixRepo() {
+  const cwd = mkdtempSync(join(tmpdir(), "linear-release-gitflow-hotfix-"));
+  runGit(["init", "-q", "-b", "develop"], cwd);
+  runGit(["config", "user.email", "test@example.com"], cwd);
+  runGit(["config", "user.name", "Test User"], cwd);
+
+  commit(cwd, "app.txt", "base", "base before release/3.34.0");
+  runGit(["checkout", "-q", "-b", "release/3.34.0"], cwd);
+  const previousRelease = commit(cwd, "release.txt", "3.34.0", "release v3.34.0");
+  runGit(["tag", "v3.34.0"], cwd);
+
+  runGit(["checkout", "-q", "develop"], cwd);
+  commit(cwd, "foo/1.txt", "FOO-1", "[FOO-1] feature on develop");
+  commit(cwd, "foo/2.txt", "FOO-2", "[FOO-2] feature on develop");
+  commit(cwd, "foo/3.txt", "FOO-3", "[FOO-3] feature on develop");
+  commit(cwd, "foo/4.txt", "FOO-4", "[FOO-4] feature on develop");
+  runGit(["merge", "-q", "--no-ff", "release/3.34.0", "-m", "Merge release/3.34.0 back into develop"], cwd);
+  const forkPoint = runGit(["rev-parse", "HEAD"], cwd);
+
+  runGit(["checkout", "-q", "-b", "release/3.34.1"], cwd);
+  const head = commit(cwd, "hotfix.txt", "fix", "[HOT-1] hotfix commit");
+  runGit(["tag", "v3.34.1"], cwd);
+
+  return { cwd, commits: { previousRelease, forkPoint, head } };
+}
+
 describe("scan base selection", () => {
   let repo: ReturnType<typeof createMigrationRepo>;
   const deps = {
@@ -72,28 +87,12 @@ describe("scan base selection", () => {
     rmSync(repo.cwd, { recursive: true, force: true });
   });
 
-  it("rejects --initial-base-ref when a reachable release baseline already exists", () => {
-    expect(() => assertInitialBaseRefAllowed([release("1.0.0", repo.commits.api1)], repo.commits.head, deps)).toThrow(
-      "already has a reachable release baseline",
-    );
-  });
-
-  it("allows --initial-base-ref when previous release baselines are unreachable", () => {
-    expect(assertInitialBaseRefAllowed([release("legacy", repo.commits.stale)], repo.commits.head, deps)).toBe(
-      "unreachable",
-    );
-  });
-
-  it("allows --initial-base-ref when no previous release baseline exists", () => {
-    expect(assertInitialBaseRefAllowed([], repo.commits.head, deps)).toBe("none");
-  });
-
   it("resolves git refs to commit SHAs", () => {
     expect(resolveCommitRef("api-start", repo.cwd)).toBe(repo.commits.api1);
     expect(resolveCommitRef("main~1", repo.cwd)).toBe(repo.commits.web);
   });
 
-  it("uses --initial-base-ref as an exclusive scan base with include paths", () => {
+  it("uses --base-ref as an exclusive scan base with include paths", () => {
     const commits = getCommitContextsBetweenShas(repo.commits.api1, repo.commits.head, {
       includePaths: ["apps/api/**"],
       cwd: repo.cwd,
@@ -110,7 +109,7 @@ describe("scan base selection", () => {
     expect(commits.map((c) => c.sha)).toEqual([repo.commits.api2, repo.commits.web, repo.commits.api1]);
   });
 
-  it("treats --initial-base-ref equal to HEAD as an empty range", () => {
+  it("treats --base-ref equal to HEAD as an empty range", () => {
     const commits = getCommitContextsBetweenShas(repo.commits.head, repo.commits.head, {
       includePaths: ["apps/api/**"],
       inspectSingleCommit: false,
@@ -120,12 +119,12 @@ describe("scan base selection", () => {
     expect(commits).toEqual([]);
   });
 
-  it("still creates a release for an accepted --initial-base-ref scan with zero matching commits", () => {
+  it("still creates a release for an accepted --base-ref scan with zero matching commits", () => {
     const commits = getCommitContextsBetweenShas(repo.commits.api1, repo.commits.head, {
       includePaths: ["does-not-match/**"],
       cwd: repo.cwd,
     });
-    const scanBase: ScanBase = { kind: "initial-base-ref", sha: repo.commits.api1, ref: "api-start" };
+    const scanBase: ScanBase = { kind: "base-ref", sha: repo.commits.api1, ref: "api-start" };
 
     expect(commits).toEqual([]);
     expect(shouldCreateReleaseForScan(commits.length, scanBase)).toBe(true);
@@ -140,9 +139,60 @@ describe("scan base selection", () => {
     expect(() => resolveCommitRef("missing-ref", repo.cwd)).toThrow('Could not resolve "missing-ref"');
   });
 
-  it("fails clearly when --initial-base-ref resolves outside the current branch history", () => {
-    expect(() => assertInitialBaseRefIsAncestor("stale", repo.commits.stale, repo.commits.head, deps)).toThrow(
+  it("fails clearly when --base-ref resolves outside the current branch history", () => {
+    expect(() => assertBaseRefIsAncestor("stale", repo.commits.stale, repo.commits.head, deps)).toThrow(
       "is not an ancestor of HEAD",
     );
+  });
+
+  it("supports GitFlow hotfix releases by letting --base-ref use the integration fork point", () => {
+    const gitFlowRepo = createGitFlowHotfixRepo();
+    const gitFlowDeps = {
+      verifyAncestorReachable: (sha: string, headSha: string) => verifyAncestorReachable(sha, headSha, gitFlowRepo.cwd),
+    };
+
+    try {
+      const automaticBase = selectAutomaticScanBase(
+        [
+          {
+            id: "previous",
+            name: "v3.34.0",
+            createdAt: new Date().toISOString(),
+            commitSha: gitFlowRepo.commits.previousRelease,
+          },
+        ],
+        gitFlowRepo.commits.head,
+        gitFlowDeps,
+        gitFlowRepo.cwd,
+      );
+
+      expect(automaticBase).toEqual({ kind: "release", sha: gitFlowRepo.commits.previousRelease });
+      expect(
+        getCommitContextsBetweenShas(automaticBase.sha, gitFlowRepo.commits.head, { cwd: gitFlowRepo.cwd }).map(
+          (c) => c.message?.split("\n")[0],
+        ),
+      ).toEqual([
+        "[HOT-1] hotfix commit",
+        "Merge release/3.34.0 back into develop",
+        "[FOO-4] feature on develop",
+        "[FOO-3] feature on develop",
+        "[FOO-2] feature on develop",
+        "[FOO-1] feature on develop",
+      ]);
+
+      const baseRef = runGit(["merge-base", "develop", "HEAD"], gitFlowRepo.cwd);
+      expect(baseRef).toBe(gitFlowRepo.commits.forkPoint);
+      expect(() =>
+        assertBaseRefIsAncestor("$(git merge-base develop HEAD)", baseRef, gitFlowRepo.commits.head, gitFlowDeps),
+      ).not.toThrow();
+      expect(
+        getCommitContextsBetweenShas(baseRef, gitFlowRepo.commits.head, {
+          inspectSingleCommit: false,
+          cwd: gitFlowRepo.cwd,
+        }).map((c) => c.message?.split("\n")[0]),
+      ).toEqual(["[HOT-1] hotfix commit"]);
+    } finally {
+      rmSync(gitFlowRepo.cwd, { recursive: true, force: true });
+    }
   });
 });

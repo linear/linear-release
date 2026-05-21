@@ -5,7 +5,7 @@ import type { Release } from "./types";
 export type ScanBase =
   | { kind: "release"; sha: string }
   | { kind: "first-sync"; sha: string; candidatesConsidered: number }
-  | { kind: "initial-base-ref"; sha: string; ref: string };
+  | { kind: "base-ref"; sha: string; ref: string };
 
 export function selectAutomaticScanBase(
   candidates: Release[],
@@ -25,26 +25,8 @@ export function selectAutomaticScanBase(
   };
 }
 
-export function assertInitialBaseRefAllowed(
-  candidates: Release[],
-  currentSha: string,
-  deps: FindBaseShaDeps,
-): "none" | "unreachable" {
-  const result = findBaseSha(candidates, currentSha, deps);
-  if (result.kind === "found") {
-    throw new Error(
-      `--initial-base-ref is only for initialization or migration. This pipeline already has a reachable release baseline at ${result.sha.slice(
-        0,
-        7,
-      )}. Remove --initial-base-ref to use the normal range.`,
-    );
-  }
-
-  return candidates.length === 0 ? "none" : "unreachable";
-}
-
-export function assertInitialBaseRefIsAncestor(
-  initialBaseRef: string,
+export function assertBaseRefIsAncestor(
+  baseRef: string,
   resolvedSha: string,
   currentSha: string,
   deps: FindBaseShaDeps,
@@ -54,7 +36,7 @@ export function assertInitialBaseRefIsAncestor(
   }
 
   throw new Error(
-    `--initial-base-ref ${initialBaseRef} (${resolvedSha.slice(0, 7)}) is not an ancestor of HEAD ${currentSha.slice(
+    `--base-ref ${baseRef} (${resolvedSha.slice(0, 7)}) is not an ancestor of HEAD ${currentSha.slice(
       0,
       7,
     )}. Choose a ref on the current branch history.`,
@@ -62,5 +44,5 @@ export function assertInitialBaseRefIsAncestor(
 }
 
 export function shouldCreateReleaseForScan(commitsLength: number, scanBase: ScanBase): boolean {
-  return commitsLength > 0 || scanBase.kind === "initial-base-ref";
+  return commitsLength > 0 || scanBase.kind === "base-ref";
 }
