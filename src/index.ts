@@ -26,16 +26,15 @@ import { error, info, setJsonMode, setLogLevel, setStderr, verbose, warn } from 
 import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
 import { withRetry } from "./retry";
-
-declare const CLI_VERSION: string;
+import { getCliVersion } from "./version";
 
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
-  console.log(CLI_VERSION);
+  console.log(getCliVersion());
   process.exit(0);
 }
 
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
-  console.log(`Linear Release CLI v${CLI_VERSION}
+  console.log(`Linear Release CLI v${getCliVersion()}
 
 Integrate CI/CD pipelines with Linear releases.
 
@@ -132,7 +131,7 @@ function formatLinkSummary(linksToFormat: ReleaseLink[]): string {
 }
 
 const logEnvironmentSummary = () => {
-  info(`linear-release v${CLI_VERSION}`);
+  info(`linear-release v${getCliVersion()}`);
   if (releaseName) {
     info(`Using custom release name: ${releaseName}`);
   }
