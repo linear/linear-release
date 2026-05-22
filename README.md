@@ -149,17 +149,23 @@ linear-release update --stage="in review" --name="Release 1.2.0"
 
 ### CLI Options
 
-| Option               | Commands                     | Description                                                                                                                                                                                                                                                          |
-| -------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--name`             | `sync`, `complete`, `update` | Custom release name. For `sync`, the value is applied to the targeted release — both newly created releases and existing ones get the provided name. For `complete` and `update`, sets the name on the targeted release.                                             |
-| `--release-version`  | `sync`, `complete`, `update` | Release version identifier. For `sync`, defaults to short commit hash. For `complete` and `update`, selects an existing release with that version (errors if none exists); does not change a release's version. If omitted, targets the most recent started release. |
-| `--stage`            | `update`                     | Target deployment stage (required for `update`)                                                                                                                                                                                                                      |
-| `--include-paths`    | `sync`                       | Filter commits by changed file paths                                                                                                                                                                                                                                 |
-| `--include-subjects` | `sync`                       | Filter commits whose subject (first line) matches a regex                                                                                                                                                                                                            |
-| `--json`             | `sync`, `complete`, `update` | Output result as JSON on stdout. Logs are emitted as JSON Lines (one object per line) on stderr.                                                                                                                                                                     |
-| `--quiet`            | `sync`, `complete`, `update` | Suppress info-level output. Warnings and errors are still printed.                                                                                                                                                                                                   |
-| `--verbose`          | `sync`, `complete`, `update` | Print detailed progress including debug diagnostics                                                                                                                                                                                                                  |
-| `--timeout`          | `sync`, `complete`, `update` | Max duration in seconds before aborting (default: 60)                                                                                                                                                                                                                |
+| Option                 | Commands                     | Description                                                                                                                                                                                                                                                          |
+| ---------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--name`               | `sync`, `complete`, `update` | Custom release name. For `sync`, the value is applied to the targeted release — both newly created releases and existing ones get the provided name. For `complete` and `update`, sets the name on the targeted release.                                             |
+| `--release-version`    | `sync`, `complete`, `update` | Release version identifier. For `sync`, defaults to short commit hash. For `complete` and `update`, selects an existing release with that version (errors if none exists); does not change a release's version. If omitted, targets the most recent started release. |
+| `--stage`              | `update`                     | Target deployment stage (required for `update`)                                                                                                                                                                                                                      |
+| `--include-paths`      | `sync`                       | Filter commits by changed file paths                                                                                                                                                                                                                                 |
+| `--include-subjects`   | `sync`                       | Filter commits whose subject (first line) matches a regex                                                                                                                                                                                                            |
+| `--link`               | `sync`, `complete`, `update` | Add a link to the targeted release. Use `--link "https://example.com"` or `--link "Label=https://example.com"`; repeat the flag to add multiple links.                                                                                                               |
+| `--document`           | `sync`, `complete`, `update` | Attach a document. `--document "Title=...markdown..."`; repeat for multiple docs. Existing documents with the same title on the release are updated.                                                                                                                 |
+| `--document-file`      | `sync`, `complete`, `update` | Same as `--document` but reads the body from a file: `--document-file "Title=path/to/file.md"`. Use `-` to read from stdin.                                                                                                                                          |
+| `--release-notes`      | `sync`, `complete`, `update` | Set the release notes for this release. Inline markdown. If combined with `--release-notes-file`, the last flag wins.                                                                                                                                                |
+| `--release-notes-file` | `sync`, `complete`, `update` | Same as `--release-notes` but reads from a file. Use `-` for stdin.                                                                                                                                                                                                  |
+| `--base-ref`           | `sync`                       | Override the scan base. Exclusive: scans `<base-ref>..HEAD`.                                                                                                                                                                                                         |
+| `--json`               | `sync`, `complete`, `update` | Output result as JSON on stdout. Logs are emitted as JSON Lines (one object per line) on stderr.                                                                                                                                                                     |
+| `--quiet`              | `sync`, `complete`, `update` | Suppress info-level output. Warnings and errors are still printed.                                                                                                                                                                                                   |
+| `--verbose`            | `sync`, `complete`, `update` | Print detailed progress including debug diagnostics                                                                                                                                                                                                                  |
+| `--timeout`            | `sync`, `complete`, `update` | Max duration in seconds before aborting (default: 60)                                                                                                                                                                                                                |
 
 ### Command Targeting
 
@@ -226,21 +232,77 @@ The regex is matched against the commit subject only (everything before the firs
 
 `--include-subjects` composes with `--include-paths`: a commit must pass both filters to be scanned.
 
+### Release Links
+
+`--link` attaches external URLs to the release — a GitHub release page, a CI run, a deployment dashboard.
+
+```bash
+# Bare URL — Linear derives the label ("GitHub" here)
+linear-release sync --link "https://github.com/acme/app/releases/tag/v1.2.0"
+
+# Multiple labeled links
+linear-release sync \
+  --link "CI run=https://ci.example.com/run/123" \
+  --link "Deploy dashboard=https://deploys.example.com/v1.2.0"
+
+# Works on complete and update too
+linear-release complete --release-version="1.2.0" \
+  --link "https://github.com/acme/app/releases/tag/v1.2.0"
+```
+
+Each value is either an absolute URL or `Label=URL`. Both `--link "Label=..."` and `--link="Label=..."` are accepted. `http(s)` is the typical scheme; the server rejects unsafe ones like `javascript:` or `data:`.
+
+### Documents and release notes
+
+Attach release notes and supporting documents to a release. Each release has at most one set of release notes (last `--release-notes` / `--release-notes-file` wins). Documents are repeatable and keyed by title — re-syncing with the same title updates content in place.
+
+```bash
+# Release notes from a generated changelog
+linear-release sync --release-notes-file ./CHANGELOG.md
+
+# Plus extra documents (deploy log, runbook, etc.)
+linear-release sync \
+  --release-notes-file ./CHANGELOG.md \
+  --document-file "Deploy log=./deploy.log" \
+  --document-file "Runbook=./runbook.md"
+
+# Stdin works on both flags — useful when piping from another command
+git log v1.0.0..HEAD --format="- %s" | linear-release sync --release-notes-file -
+
+# Inline (single-line content only — see "Multi-line content" below)
+linear-release sync --document "Deploy log=Deployed to production at $(date -u +%FT%TZ)"
+```
+
+> **Multi-line content**: use `--document-file` / `--release-notes-file`. Inline `\n` inside `"…"` is passed verbatim by the shell — same gotcha as `gh release create --notes`, `git commit -m`, and `helm --set`. For inline multi-line, use a real newline in the quotes or [`$'…\n…'`](https://www.gnu.org/software/bash/manual/html_node/ANSI_002dC-Quoting.html).
+
 ## How It Works
 
 1. **Fetches the latest release** from your Linear pipeline to determine the commit range
 2. **Scans commits** between the commit from the last release and the current commit
 3. **Extracts issue identifiers** from branch names and commit messages (e.g., `feat/ENG-123-add-feature`)
 4. **Detects pull/merge request numbers** from commit messages — GitHub `Title (#42)` / `Merge pull request #42`, and GitLab `See merge request <group>/<project>!42` trailers (emitted whenever a merge commit is created)
-5. **Syncs data to Linear** that adds issues to a newly created completed release (continuous pipelines) or the currently in-progress release (scheduled pipelines). PR/MR numbers are sent alongside the repository info, and Linear resolves them back to any issues linked to those PRs/MRs — so issues attached only via a PR/MR (not mentioned in a commit message or branch name) are still picked up.
+5. **Syncs data to Linear** that adds issues and provided links to a newly created completed release (continuous pipelines) or the currently in-progress release (scheduled pipelines). PR/MR numbers are sent alongside the repository info, and Linear resolves them back to any issues linked to those PRs/MRs — so issues attached only via a PR/MR (not mentioned in a commit message or branch name) are still picked up.
 
 > [!NOTE]
 > **First sync**: when no prior release exists for the pipeline, only the current commit is scanned (there's no previous SHA to bound the range from).
 
+### Overriding the Scan Base
+
+Use `--base-ref` to explicitly choose the exclusive lower bound for `sync`'s commit scan. This is useful when the automatically selected release baseline is not the range you want for a custom branching workflow, first-time onboarding, or migration.
+
+```bash
+linear-release sync --base-ref=<last-released-ref> --include-paths="apps/api/**"
+```
+
+The base ref is exclusive: linear-release scans `<base-ref>..HEAD`, matching Git range syntax, and still applies any configured path filters. Pass the last commit, tag, or ref that should be treated as already released, not the first commit you want included.
+
+When `--base-ref` is provided, it overrides automatic base selection for that run. After sync, current `HEAD` is stored as the future release baseline. Choosing an older or newer base can reattach or skip commits, so use this only when you intentionally want to own the scan range.
+
 ## Troubleshooting
 
 - **Unexpected release was updated/completed**: pass `--release-version` explicitly so the command does not target the latest started/planned release.
-- **No release created by `sync`**: if no commits match the computed range (or path filters), `sync` returns `{"release":null}`.
+- **No release created by `sync`**: without `--base-ref`, if no commits match the computed range (or path filters), `sync` returns `{"release":null}`.
+- **Need to backfill the first release, migrate rewritten history, or override the inferred range**: run `sync` with `--base-ref=<ref>` to set an explicit scan base.
 - **Stage update fails**: `--stage` matches first by exact name, then case-insensitively with dashes and underscores treated as spaces. If multiple stages normalize to the same value, pass the exact stage name to disambiguate.
 - **`sync --release-version` fails because the matching release is archived**: restore the archived release in Linear before re-syncing.
 - **Operation timed out**: the CLI aborts after 60 seconds by default. For large repositories or slow networks, increase the limit with `--timeout=120`.

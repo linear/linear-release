@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import type { CommitContext, GitInfo, RepoInfo } from "./types";
 import { error as logError, verbose, warn } from "./log";
 
@@ -264,6 +264,43 @@ export function verifyAncestorReachable(sha: string, headSha: string, cwd: strin
 const SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
 
 /**
+ * Resolves a git ref, tag, or SHA to a full commit SHA.
+ *
+ * Shallow or single-branch clones often lack the target locally:
+ *   - SHA-like inputs: deepen history until the commit is reachable.
+ *   - Tag or branch refs: `git fetch origin <ref>` populates FETCH_HEAD with
+ *     the resolved commit for both kinds, without needing to know which.
+ */
+export function resolveCommitRef(ref: string, cwd: string = process.cwd()): string {
+  const resolve = (target: string = ref) =>
+    execFileSync("git", ["rev-parse", "--verify", `${target}^{commit}`], {
+      cwd,
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    }).trim();
+
+  try {
+    return resolve();
+  } catch {
+    if (SHA_PATTERN.test(ref)) {
+      ensureCommitAvailable(ref, cwd);
+      return resolve();
+    }
+    try {
+      verbose(`Ref "${ref}" not in local history; fetching from origin`);
+      execFileSync("git", ["fetch", "origin", ref], {
+        cwd,
+        stdio: ["ignore", "ignore", "ignore"],
+        timeout: 30_000,
+      });
+      return resolve("FETCH_HEAD");
+    } catch {
+      throw new Error(`Could not resolve "${ref}" to a commit. Use a valid commit SHA, tag, or ref.`);
+    }
+  }
+}
+
+/**
  * Extracts the branch name from a merge commit message.
  * Supports:
  *   - GitHub: "Merge pull request #X from owner/branch-name"
@@ -369,19 +406,21 @@ function runLog(rangeArgs: string, cwd: string): CommitContext[] {
  * `--no-walk` (only when `fromSha === toSha`): without it, `git log -1 <sha>
  * -- <paths>` walks back from `<sha>` to the first ancestor matching the
  * pathspec — silently returning an unrelated commit when `<sha>` itself
- * doesn't match.
+ * doesn't match. Callers that need true `sha..sha` empty-range semantics can
+ * pass `inspectSingleCommit: false`.
  *
  * @param fromSha - Starting commit SHA (exclusive)
  * @param toSha - Ending commit SHA (inclusive)
  * @param options.includePaths - Glob patterns to filter commits by file paths (relative to repo root)
+ * @param options.inspectSingleCommit - When SHAs match, inspect that one commit instead of treating it as an empty range
  * @param options.cwd - Working directory for git commands (defaults to process.cwd())
  */
 export function getCommitContextsBetweenShas(
   fromSha: string,
   toSha: string,
-  options: { includePaths?: string[] | null; cwd?: string } = {},
+  options: { includePaths?: string[] | null; inspectSingleCommit?: boolean; cwd?: string } = {},
 ): CommitContext[] {
-  const { includePaths = null, cwd = process.cwd() } = options;
+  const { includePaths = null, inspectSingleCommit = true, cwd = process.cwd() } = options;
 
   if (!SHA_PATTERN.test(fromSha)) {
     warn(`Invalid "from" SHA format "${fromSha}"`);
@@ -392,9 +431,10 @@ export function getCommitContextsBetweenShas(
     return [];
   }
 
+  const inspectingSingleCommit = fromSha === toSha && inspectSingleCommit;
   const args = [
     includePaths?.length ? "--full-history" : "",
-    fromSha === toSha ? `--no-walk ${toSha}` : `${fromSha}..${toSha}`,
+    inspectingSingleCommit ? `--no-walk ${toSha}` : `${fromSha}..${toSha}`,
     buildPathspecArgs(includePaths),
   ]
     .filter(Boolean)
@@ -402,10 +442,13 @@ export function getCommitContextsBetweenShas(
   const commits = runLog(args, cwd);
 
   if (commits.length === 0) {
-    verbose(
-      `No commits found between ${fromSha.slice(0, 7)}..${toSha.slice(0, 7)}` +
-        (includePaths?.length ? ` with paths: ${includePaths.join(", ")}` : ""),
-    );
+    if (inspectingSingleCommit) {
+      const pathFilter = includePaths?.length ? ` include paths: ${includePaths.join(", ")}` : "";
+      verbose(`Commit ${toSha.slice(0, 7)} did not match${pathFilter}`);
+    } else {
+      const pathFilter = includePaths?.length ? ` matching include paths: ${includePaths.join(", ")}` : "";
+      verbose(`No commits found between ${fromSha.slice(0, 7)}..${toSha.slice(0, 7)}${pathFilter}`);
+    }
   }
 
   return commits;

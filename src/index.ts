@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { LinearClient, LinearClientOptions } from "@linear/sdk";
 import {
   assertGitAvailable,
@@ -5,10 +6,10 @@ import {
   getCommitContextsBetweenShas,
   getCurrentGitInfo,
   getRepoInfo,
-  resolveFirstSyncBoundary,
+  resolveCommitRef,
   verifyAncestorReachable,
 } from "./git";
-import { findBaseSha } from "./base-sha";
+import { assertBaseRefIsAncestor, ScanBase, selectAutomaticScanBase, shouldCreateReleaseForScan } from "./scan-base";
 import { scanCommits } from "./scan";
 import {
   Release,
@@ -21,21 +22,27 @@ import {
   IssueReference,
   RepoInfo,
 } from "./types";
-import { getCLIWarnings, parseCLIArgs } from "./args";
+import {
+  getCLIWarnings,
+  parseCLIArgs,
+  ReleaseContentSource,
+  ReleaseDocumentSpec,
+  ReleaseLink,
+  ReleaseNoteSpec,
+} from "./args";
 import { error, info, setJsonMode, setLogLevel, setStderr, verbose, warn } from "./log";
 import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
 import { withRetry } from "./retry";
-
-declare const CLI_VERSION: string;
+import { getCliVersion } from "./version";
 
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
-  console.log(CLI_VERSION);
+  console.log(getCliVersion());
   process.exit(0);
 }
 
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
-  console.log(`Linear Release CLI v${CLI_VERSION}
+  console.log(`Linear Release CLI v${getCliVersion()}
 
 Integrate CI/CD pipelines with Linear releases.
 
@@ -52,6 +59,12 @@ Options:
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
   --include-subjects=<regex> Filter commits whose subject (first line) matches the regex
+  --link <URL|Label=URL>       Add a link to the targeted release (repeatable)
+  --document <Title=content> Attach a document to the release (repeatable, Title required)
+  --document-file <[Title=]path> Attach a document from a file (title inferred from basename if omitted; "-" for stdin requires Title=-; repeatable)
+  --release-notes <content>  Set the release notes covering this release (last-wins)
+  --release-notes-file <path> Set release notes from a file ("-" for stdin; last-wins)
+  --base-ref=<ref>           Override sync scan base (exclusive; scans <ref>..HEAD)
   --timeout=<seconds>        Abort if the operation exceeds this duration (default: 60)
   --json                     Output result as JSON (logs emitted as JSON Lines on stderr)
   --quiet                    Suppress info-level output (warnings and errors still printed)
@@ -69,6 +82,12 @@ Examples:
   linear-release update --stage=production
   linear-release sync --include-paths="apps/web/**,packages/**"
   linear-release sync --include-subjects="[A-Z]{2,}-[0-9]+"
+  linear-release sync --link "https://ci.example.com/run/123"
+  linear-release sync --link "Pipeline=https://ci.example.com/run/123"
+  linear-release sync --document-file "Changelog=./CHANGELOG.md"
+  linear-release sync --document-file ./CHANGELOG.md
+  linear-release sync --release-notes-file ./release-notes.md
+  linear-release sync --base-ref=<last-released-ref> --include-paths="apps/web/**"
 `);
   process.exit(0);
 }
@@ -93,13 +112,68 @@ const {
   releaseName,
   releaseVersion,
   stageName,
+  baseRef,
   includePaths,
   includeSubjects,
+  links,
+  documents: documentSpecs,
+  releaseNotes: releaseNotesSpec,
   jsonOutput,
   timeoutSeconds,
   logLevel,
 } = parsedArgs;
 const cliWarnings = getCLIWarnings(parsedArgs);
+
+type ReleaseDocument = { title: string; content: string };
+type ReleaseNotes = { content: string; title?: string };
+
+let stdinContent: string | undefined;
+function readStdinOnce(flag: string): string {
+  if (stdinContent === undefined) {
+    stdinContent = readFileSync(0, "utf8");
+  } else {
+    throw new Error(
+      `${flag} cannot consume stdin: another flag already read from stdin. Use "-" with at most one --document-file or --release-notes-file.`,
+    );
+  }
+  return stdinContent;
+}
+
+function resolveContent(source: ReleaseContentSource, flag: string): string {
+  if (source.kind === "inline") {
+    return source.content;
+  }
+  if (source.path === "-") {
+    return readStdinOnce(flag);
+  }
+  try {
+    return readFileSync(source.path, "utf8");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to read ${flag} file "${source.path}": ${message}`);
+  }
+}
+
+function resolveDocuments(specs: ReleaseDocumentSpec[]): ReleaseDocument[] {
+  const flag = "--document-file";
+  return specs.map((spec) => ({ title: spec.title, content: resolveContent(spec.source, flag) }));
+}
+
+function resolveReleaseNotes(spec: ReleaseNoteSpec | undefined): ReleaseNotes | undefined {
+  if (!spec) return undefined;
+  return { content: resolveContent(spec.source, "--release-notes-file") };
+}
+
+let documents: ReleaseDocument[];
+let releaseNotes: ReleaseNotes | undefined;
+try {
+  documents = resolveDocuments(documentSpecs);
+  releaseNotes = resolveReleaseNotes(releaseNotesSpec);
+} catch (err) {
+  const message = err instanceof Error ? err.message : String(err);
+  error(`${message} (run linear-release --help for usage)`);
+  process.exit(1);
+}
 setLogLevel(logLevel);
 if (jsonOutput) {
   setStderr(true);
@@ -110,16 +184,41 @@ function formatVersion(release: { version?: string } | null | undefined): string
   return release?.version ? `version: ${release.version}` : "no version set";
 }
 
+function formatLinkForLog(link: ReleaseLink): string {
+  if (link.label) {
+    return link.label;
+  }
+
+  try {
+    const { hostname } = new URL(link.url);
+    return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
+  } catch {
+    return "unlabeled";
+  }
+}
+
+function formatLinkSummary(linksToFormat: ReleaseLink[]): string {
+  return linksToFormat.length > 0 ? `, links [${linksToFormat.map(formatLinkForLog).join(", ")}]` : "";
+}
+
+function formatDocumentsSummary(docs: ReleaseDocument[]): string {
+  return docs.length > 0 ? `, documents [${docs.map((d) => d.title).join(", ")}]` : "";
+}
+
+function formatReleaseNotesSummary(notes: ReleaseNotes | undefined): string {
+  return notes ? `, release notes (${notes.content.length} chars)` : "";
+}
+
 const logEnvironmentSummary = () => {
-  info(`linear-release v${CLI_VERSION}`);
+  info(`linear-release v${getCliVersion()}`);
   if (releaseName) {
     info(`Using custom release name: ${releaseName}`);
   }
   if (releaseVersion) {
     info(`Using custom release version: ${releaseVersion}`);
   }
-  for (const w of cliWarnings) {
-    warn(w);
+  for (const warningMessage of cliWarnings) {
+    warn(warningMessage);
   }
 };
 
@@ -176,22 +275,33 @@ async function syncCommand(): Promise<{
     throw new Error("Could not get current commit");
   }
 
-  let latestSha = await getLatestSha();
+  const recentReleases = await getRecentReleases();
+  const scanBase = getScanBase(recentReleases, currentCommit.commit);
+  let latestSha = scanBase.sha;
   let inspectingOnlyCurrentCommit = false;
 
-  try {
-    ensureCommitAvailable(latestSha);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    warn(
-      `Could not make sha ${latestSha} available in local git history; falling back to current commit only. ${message}`,
-    );
-    inspectingOnlyCurrentCommit = true;
-    latestSha = currentCommit.commit;
+  if (scanBase.kind === "base-ref") {
+    assertBaseRefIsAncestor(scanBase.ref, latestSha, currentCommit.commit, { verifyAncestorReachable });
+    const includePathSummary = effectiveIncludePaths?.length
+      ? ` with include paths: ${effectiveIncludePaths.join(", ")}`
+      : "";
+    info(`Scanning ${latestSha.slice(0, 7)}..${currentCommit.commit.slice(0, 7)}${includePathSummary}`);
+  } else {
+    try {
+      ensureCommitAvailable(latestSha);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warn(
+        `Could not make sha ${latestSha} available in local git history; falling back to current commit only. ${message}`,
+      );
+      inspectingOnlyCurrentCommit = true;
+      latestSha = currentCommit.commit;
+    }
   }
 
   const commits = getCommitContextsBetweenShas(latestSha, currentCommit.commit, {
     includePaths: effectiveIncludePaths,
+    inspectSingleCommit: scanBase.kind !== "base-ref",
   });
 
   if (inspectingOnlyCurrentCommit) {
@@ -205,17 +315,31 @@ async function syncCommand(): Promise<{
       verbose(`Inspecting current commit (${currentCommit.commit})`);
     }
   } else {
-    info(
-      `Found ${commits.length} ${pluralize(commits.length, "commit")} between ${latestSha.slice(0, 7)} and ${currentCommit.commit.slice(0, 7)}`,
-    );
+    const commitNoun = effectiveIncludePaths?.length ? "matching commit" : "commit";
+    if (scanBase.kind === "base-ref") {
+      info(`Found ${commits.length} ${pluralize(commits.length, commitNoun)} in requested range`);
+    } else if (latestSha === currentCommit.commit) {
+      info(
+        `Inspected current commit ${currentCommit.commit.slice(0, 7)}; found ${commits.length} ${pluralize(commits.length, commitNoun)}`,
+      );
+    } else {
+      info(
+        `Found ${commits.length} ${pluralize(commits.length, commitNoun)} between ${latestSha.slice(0, 7)} and ${currentCommit.commit.slice(0, 7)}`,
+      );
+    }
   }
 
   if (commits.length === 0) {
     const reason = effectiveIncludePaths?.length
-      ? `matching ${JSON.stringify(effectiveIncludePaths)}`
-      : "in the computed range";
-    info(`No commits found ${reason}. Skipping release creation.`);
-    return null;
+      ? `No matching commits found for include paths: ${effectiveIncludePaths.join(", ")}`
+      : scanBase.kind === "base-ref"
+        ? "No commits found in the requested range"
+        : "No commits found in the computed range";
+    if (!shouldCreateReleaseForScan(commits.length, scanBase)) {
+      info(`${reason}. Skipping release creation.`);
+      return null;
+    }
+    info(`${reason}. Syncing release anyway because --base-ref was provided to establish the baseline.`);
   }
 
   // git log returns newest-first; scanCommits needs chronological (oldest-first) for last-write-wins
@@ -234,13 +358,27 @@ async function syncCommand(): Promise<{
 
   const repoInfo = getRepoInfo();
 
-  const release = await syncRelease(issueReferences, revertedIssueReferences, prNumbers, repoInfo, debugSink);
+  const release = await syncRelease(
+    issueReferences,
+    revertedIssueReferences,
+    prNumbers,
+    repoInfo,
+    debugSink,
+    links,
+    documents,
+    releaseNotes,
+  );
   const issueIds = issueReferences.map((f) => f.identifier);
   const parts: string[] = [];
   if (issueIds.length > 0) parts.push(`issues [${issueIds.join(", ")}]`);
   if (prNumbers.length > 0) parts.push(`pull requests [${prNumbers.map((n) => `#${n}`).join(", ")}]`);
-  const attached = parts.length > 0 ? parts.join(", ") : "no new issues or pull requests";
-  info(`Synced to release ${release.name} (${formatVersion(release)}): ${attached}`);
+  const scanned = parts.length > 0 ? parts.join(", ") : "no new issues or pull requests";
+  info(
+    `Synced to release ${release.name} (${formatVersion(release)}): ${scanned}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
+  );
+  if (scanBase.kind === "base-ref") {
+    info(`Stored release baseline: ${(release.commitSha ?? currentCommit.commit).slice(0, 7)}`);
+  }
 
   return {
     release: {
@@ -263,10 +401,15 @@ async function completeCommand(): Promise<{
   const result = await completeRelease({
     name: releaseName,
     version: releaseVersion,
-    commitSha,
+    commitSha: commitSha ?? undefined,
+    links,
+    documents,
+    releaseNotes,
   });
   if (result.success) {
-    info(`Completed release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)})`);
+    info(
+      `Completed release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)})${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
+    );
   } else {
     throw new Error("Failed to complete release");
   }
@@ -298,6 +441,9 @@ async function updateCommand(): Promise<{
       stage: stageName,
       version: releaseVersion,
       name: releaseName,
+      links,
+      documents,
+      releaseNotes,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -306,7 +452,7 @@ async function updateCommand(): Promise<{
 
   if (result.success) {
     info(
-      `Updated release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)}) to stage ${result.release?.stageName}`,
+      `Updated release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)}) to stage ${result.release?.stageName}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
     );
   } else {
     throw new Error("Failed to update release");
@@ -345,19 +491,25 @@ async function getRecentReleases(): Promise<Release[]> {
   return response.data.recentReleasesByAccessKey;
 }
 
-async function getLatestSha(): Promise<string> {
-  const currentSha = getCurrentGitInfo().commit;
-  if (!currentSha) {
-    throw new Error("Could not get current commit");
+function getScanBase(candidates: Release[], currentSha: string): ScanBase {
+  if (baseRef) {
+    let resolvedSha: string;
+    try {
+      resolvedSha = resolveCommitRef(baseRef);
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      throw new Error(`Invalid --base-ref: ${detail}`);
+    }
+    info(`Using --base-ref ${baseRef} (${resolvedSha.slice(0, 7)}); skipping automatic baseline selection`);
+    return { kind: "base-ref", sha: resolvedSha, ref: baseRef };
   }
 
-  const candidates = await getRecentReleases();
-  const result = findBaseSha(candidates, currentSha, { verifyAncestorReachable });
-  if (result.kind === "found") {
-    return result.sha;
+  const scanBase = selectAutomaticScanBase(candidates, currentSha, { verifyAncestorReachable });
+  if (scanBase.kind !== "first-sync") {
+    return scanBase;
   }
 
-  if (candidates.length === 0) {
+  if (scanBase.candidatesConsidered === 0) {
     verbose("No recent releases found; assuming first sync");
   } else {
     // The candidate list came back non-empty but no entry is reachable from
@@ -369,20 +521,20 @@ async function getLatestSha(): Promise<string> {
     // resolveFirstSyncBoundary, which uses HEAD^1 when HEAD is a merge commit.
     // The follow-up verbose lines below print the boundary that was chosen.
     warn(
-      `No recent release is an ancestor of ${currentSha} (${candidates.length} candidate${
-        candidates.length === 1 ? "" : "s"
-      } considered); falling back to the first-sync scan boundary`,
+      `No recent release is an ancestor of ${currentSha} (${scanBase.candidatesConsidered} ${pluralize(
+        scanBase.candidatesConsidered,
+        "candidate",
+      )} considered); falling back to the first-sync scan boundary`,
     );
   }
   // For a merge HEAD the issue keys live on HEAD^2's branch, not on HEAD
   // itself, so HEAD-only would miss them. Non-merge HEAD carries its own key.
-  const boundary = resolveFirstSyncBoundary(currentSha);
-  if (boundary !== currentSha) {
-    verbose(`Merge HEAD: using HEAD^1 (${boundary}) as the scan boundary`);
+  if (scanBase.sha !== currentSha) {
+    verbose(`Merge HEAD: using HEAD^1 (${scanBase.sha}) as the scan boundary`);
   } else {
     verbose("Inspecting current commit only");
   }
-  return boundary;
+  return scanBase;
 }
 
 async function getPipelineSettings(): Promise<{
@@ -409,6 +561,9 @@ async function syncRelease(
   prNumbers: number[],
   repoInfo: RepoInfo | null,
   debugSink: DebugSink,
+  releaseLinks: ReleaseLink[],
+  releaseDocuments: ReleaseDocument[],
+  releaseNotesValue: ReleaseNotes | undefined,
 ): Promise<Release> {
   const currentSha = await getCurrentGitInfo().commit;
   if (!currentSha) {
@@ -444,6 +599,9 @@ async function syncRelease(
         commitSha: currentSha,
         issueReferences,
         revertedIssueReferences: revertedIssueReferences.length > 0 ? revertedIssueReferences : undefined,
+        links: releaseLinks.length > 0 ? releaseLinks : undefined,
+        documents: releaseDocuments.length > 0 ? releaseDocuments : undefined,
+        releaseNotes: releaseNotesValue,
         pullRequestReferences: prNumbers.map((number) => ({
           repositoryOwner: owner,
           repositoryName: name,
@@ -470,14 +628,24 @@ async function syncRelease(
 }
 
 async function completeRelease(options: {
-  name?: string | null;
-  version?: string | null;
-  commitSha?: string | null;
+  name?: string;
+  version?: string;
+  commitSha?: string;
+  links: ReleaseLink[];
+  documents: ReleaseDocument[];
+  releaseNotes?: ReleaseNotes;
 }): Promise<{
   success: boolean;
   release: { id: string; name: string; version?: string; url?: string } | null;
 }> {
-  const { name, version, commitSha } = options;
+  const {
+    name,
+    version,
+    commitSha,
+    links: releaseLinks,
+    documents: releaseDocuments,
+    releaseNotes: notesValue,
+  } = options;
 
   const response = await apiRequest<AccessKeyCompleteReleaseResponse>(
     `
@@ -498,6 +666,9 @@ async function completeRelease(options: {
         name,
         version,
         commitSha,
+        links: releaseLinks.length > 0 ? releaseLinks : undefined,
+        documents: releaseDocuments.length > 0 ? releaseDocuments : undefined,
+        releaseNotes: notesValue,
       },
     },
   );
@@ -507,8 +678,11 @@ async function completeRelease(options: {
 
 async function updateReleaseByPipeline(options: {
   stage?: string;
-  version?: string | null;
-  name?: string | null;
+  version?: string;
+  name?: string;
+  links: ReleaseLink[];
+  documents: ReleaseDocument[];
+  releaseNotes?: ReleaseNotes;
 }): Promise<{
   success: boolean;
   release: {
@@ -519,19 +693,11 @@ async function updateReleaseByPipeline(options: {
     stageName: string;
   } | null;
 }> {
-  const { stage, version, name } = options;
-  const versionInput = version ? `, version: "${version}"` : "";
-  const stageInput = stage ? `, stage: "${stage}"` : "";
-  const nameInput = name ? `, name: "${name}"` : "";
-
-  const inputParts = [versionInput, stageInput, nameInput]
-    .filter(Boolean)
-    .map((s) => s.slice(2))
-    .join(", ");
+  const { stage, version, name, links: releaseLinks, documents: releaseDocuments, releaseNotes: notesValue } = options;
   const response = await apiRequest<AccessKeyUpdateByPipelineResponse>(
     `
-    mutation {
-      releaseUpdateByPipelineByAccessKey(input: { ${inputParts} }) {
+    mutation releaseUpdateByPipelineByAccessKey($input: ReleaseUpdateByPipelineInputBase!) {
+      releaseUpdateByPipelineByAccessKey(input: $input) {
         success
         release {
           id
@@ -545,6 +711,16 @@ async function updateReleaseByPipeline(options: {
       }
     }
     `,
+    {
+      input: {
+        stage,
+        version,
+        name,
+        links: releaseLinks.length > 0 ? releaseLinks : undefined,
+        documents: releaseDocuments.length > 0 ? releaseDocuments : undefined,
+        releaseNotes: notesValue,
+      },
+    },
   );
 
   const result = response.data.releaseUpdateByPipelineByAccessKey;
