@@ -220,13 +220,13 @@ describe("commit message magic word behavior", () => {
     expect(ids(result)).toEqual(["LIN-123"]);
   });
 
-  it("does not extract key in title without keyword", () => {
+  it("extracts KEY-N: prefix at the start of the subject", () => {
     const result = extractLinearIssueIdentifiersForCommit({
       sha: "abc",
       branchName: null,
       message: "LIN-123: Fix something",
     });
-    expect(ids(result)).toEqual([]);
+    expect(ids(result)).toEqual(["LIN-123"]);
   });
 
   it.each([
@@ -442,6 +442,24 @@ describe("bracketed identifier in commit subject", () => {
       message: "ENG-123 My change",
     });
     expect(ids(result)).toEqual(["ENG-123"]);
+  });
+
+  it("extracts identifier from a KEY-N: prefix (colon then space)", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "ENG-123: My change",
+    });
+    expect(ids(result)).toEqual(["ENG-123"]);
+  });
+
+  it("does not extract KEY-N: prefix without a space after the colon", () => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message: "ENG-123:my change",
+    });
+    expect(ids(result)).toEqual([]);
   });
 
   it("does not extract bare prefix when the subject does not start with it", () => {
