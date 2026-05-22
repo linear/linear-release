@@ -2,9 +2,15 @@ import {
   extractLinearIssueIdentifiersForCommit,
   extractPullRequestNumbersForCommit,
   extractRevertedIssueIdentifiersForCommit,
+  getEffectiveSubject,
 } from "./extractors";
 import { verbose } from "./log";
 import { CommitContext, DebugSink, IssueReference, PullRequestSource } from "./types";
+
+export type ScanOptions = {
+  includePaths?: string[] | null;
+  includeSubjects?: string | null;
+};
 
 /**
  * Scan commits and produce added/reverted issue references using last-write-wins.
@@ -13,13 +19,15 @@ import { CommitContext, DebugSink, IssueReference, PullRequestSource } from "./t
  */
 export function scanCommits(
   commits: CommitContext[],
-  includePaths: string[] | null,
+  options: ScanOptions = {},
 ): {
   issueReferences: IssueReference[];
   revertedIssueReferences: IssueReference[];
   prNumbers: number[];
   debugSink: DebugSink;
 } {
+  const { includePaths = null, includeSubjects = null } = options;
+  const subjectRegex = includeSubjects ? new RegExp(includeSubjects) : null;
   const lastAction = new Map<string, "added" | "reverted">();
   const addedRefs = new Map<string, IssueReference>();
   const revertedRefs = new Map<string, IssueReference>();
@@ -31,9 +39,18 @@ export function scanCommits(
     revertedIssues: {},
     pullRequests: [],
     includePaths,
+    includeSubjects,
   };
 
   for (const commit of commits) {
+    if (subjectRegex) {
+      const subject = getEffectiveSubject(commit.message);
+      if (!subjectRegex.test(subject)) {
+        verbose(`Skipping commit ${commit.sha} — subject does not match --include-subjects`);
+        continue;
+      }
+    }
+
     debugSink.inspectedShas.push(commit.sha);
 
     for (const { identifier, source } of extractRevertedIssueIdentifiersForCommit(commit)) {

@@ -155,6 +155,7 @@ linear-release update --stage="in review" --name="Release 1.2.0"
 | `--release-version`    | `sync`, `complete`, `update` | Release version identifier. For `sync`, defaults to short commit hash. For `complete` and `update`, selects an existing release with that version (errors if none exists); does not change a release's version. If omitted, targets the most recent started release. |
 | `--stage`              | `update`                     | Target deployment stage (required for `update`)                                                                                                                                                                                                                      |
 | `--include-paths`      | `sync`                       | Filter commits by changed file paths                                                                                                                                                                                                                                 |
+| `--include-subjects`   | `sync`                       | Filter commits whose subject (first line) matches a regex                                                                                                                                                                                                            |
 | `--link`               | `sync`, `complete`, `update` | Add a link to the targeted release. Use `--link "https://example.com"` or `--link "Label=https://example.com"`; repeat the flag to add multiple links.                                                                                                               |
 | `--document`           | `sync`, `complete`, `update` | Attach a document. `--document "Title=...markdown..."`; repeat for multiple docs. Existing documents with the same title on the release are updated.                                                                                                                 |
 | `--document-file`      | `sync`, `complete`, `update` | Same as `--document` but reads the body from a file: `--document-file "Title=path/to/file.md"`. Use `-` to read from stdin.                                                                                                                                          |
@@ -214,6 +215,22 @@ linear-release sync --include-paths="apps/mobile/**,packages/shared/**"
 Patterns use [Git pathspec](https://git-scm.com/docs/gitglossary#Documentation/gitglossary.txt-pathspec) glob syntax. Paths are relative to the repository root.
 
 Path patterns can also be configured in your pipeline settings in Linear. If both are set, the CLI `--include-paths` option takes precedence.
+
+### Subject Filtering
+
+Use `--include-subjects` to only scan commits whose subject (first line) matches a regular expression. Useful when the default commit range pulls in noise — direct pushes without issue links, bot commits, or merge commits you don't want appearing in releases.
+
+```bash
+# Only commits that mention a Linear issue identifier in the subject
+linear-release sync --include-subjects="[A-Z]{2,}-[0-9]+"
+
+# Conventional Commits — keep user-impacting changes, drop chore/docs/test/ci
+linear-release sync --include-subjects="^(feat|fix|perf):"
+```
+
+The regex is matched against the commit subject only (everything before the first newline) — body lines such as squash dumps or co-author trailers are ignored. Use the regex's own `|` alternation to combine multiple patterns; remember to escape regex metacharacters in shell strings.
+
+`--include-subjects` composes with `--include-paths`: a commit must pass both filters to be scanned.
 
 ### Release Links
 

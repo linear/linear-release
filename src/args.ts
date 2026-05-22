@@ -26,6 +26,7 @@ export type ParsedCLIArgs = {
   stageName?: string;
   baseRef?: string;
   includePaths: string[];
+  includeSubjects: string | null;
   links: ReleaseLink[];
   documents: ReleaseDocumentSpec[];
   releaseNotes?: ReleaseNoteSpec;
@@ -130,6 +131,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
       stage: { type: "string" },
       "base-ref": { type: "string" },
       "include-paths": { type: "string" },
+      "include-subjects": { type: "string" },
       link: { type: "string", multiple: true },
       document: { type: "string", multiple: true },
       "document-file": { type: "string", multiple: true },
@@ -163,6 +165,17 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
   if (values.quiet) logLevel = LogLevel.Quiet;
   else if (values.verbose) logLevel = LogLevel.Verbose;
 
+  let includeSubjects: string | null = null;
+  const rawIncludeSubjects = values["include-subjects"];
+  if (rawIncludeSubjects !== undefined && rawIncludeSubjects.length > 0) {
+    try {
+      new RegExp(rawIncludeSubjects);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(`Invalid --include-subjects regex: ${detail}`);
+    }
+    includeSubjects = rawIncludeSubjects;
+  }
   const command = positionals[0] || "sync";
   const links = (values.link ?? []).map(parseReleaseLink);
 
@@ -210,6 +223,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
           .map((p) => p.trim())
           .filter((p) => p.length > 0)
       : [],
+    includeSubjects,
     links,
     documents,
     releaseNotes,
@@ -217,4 +231,8 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
     timeoutSeconds,
     logLevel,
   };
+}
+
+export function getCLIWarnings(_args: ParsedCLIArgs): string[] {
+  return [];
 }

@@ -91,6 +91,25 @@ describe("parseCLIArgs", () => {
     expect(result.includePaths).toEqual(["apps/web/**", "packages/**"]);
   });
 
+  it("defaults --include-subjects to null", () => {
+    const result = parseCLIArgs([]);
+    expect(result.includeSubjects).toBeNull();
+  });
+
+  it("returns --include-subjects as the raw pattern string", () => {
+    const result = parseCLIArgs(["--include-subjects", "^(feat|fix):"]);
+    expect(result.includeSubjects).toBe("^(feat|fix):");
+  });
+
+  it("treats empty --include-subjects as no filter", () => {
+    const result = parseCLIArgs(["--include-subjects", ""]);
+    expect(result.includeSubjects).toBeNull();
+  });
+
+  it("throws a helpful error on invalid --include-subjects regex", () => {
+    expect(() => parseCLIArgs(["--include-subjects", "([unclosed"])).toThrow(/Invalid --include-subjects regex/);
+  });
+
   it("parses repeatable --link values", () => {
     const result = parseCLIArgs([
       "sync",

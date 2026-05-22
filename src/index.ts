@@ -22,7 +22,14 @@ import {
   IssueReference,
   RepoInfo,
 } from "./types";
-import { parseCLIArgs, ReleaseContentSource, ReleaseDocumentSpec, ReleaseLink, ReleaseNoteSpec } from "./args";
+import {
+  getCLIWarnings,
+  parseCLIArgs,
+  ReleaseContentSource,
+  ReleaseDocumentSpec,
+  ReleaseLink,
+  ReleaseNoteSpec,
+} from "./args";
 import { error, info, setJsonMode, setLogLevel, setStderr, verbose, warn } from "./log";
 import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
@@ -51,6 +58,7 @@ Options:
   --release-version=<version>  Release version identifier
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
+  --include-subjects=<regex> Filter commits whose subject (first line) matches the regex
   --link <URL|Label=URL>       Add a link to the targeted release (repeatable)
   --document <Title=content> Attach a document to the release (repeatable, Title required)
   --document-file <[Title=]path> Attach a document from a file (title inferred from basename if omitted; "-" for stdin requires Title=-; repeatable)
@@ -73,6 +81,7 @@ Examples:
   linear-release complete
   linear-release update --stage=production
   linear-release sync --include-paths="apps/web/**,packages/**"
+  linear-release sync --include-subjects="[A-Z]{2,}-[0-9]+"
   linear-release sync --link "https://ci.example.com/run/123"
   linear-release sync --link "Pipeline=https://ci.example.com/run/123"
   linear-release sync --document-file "Changelog=./CHANGELOG.md"
@@ -105,6 +114,7 @@ const {
   stageName,
   baseRef,
   includePaths,
+  includeSubjects,
   links,
   documents: documentSpecs,
   releaseNotes: releaseNotesSpec,
@@ -112,6 +122,7 @@ const {
   timeoutSeconds,
   logLevel,
 } = parsedArgs;
+const cliWarnings = getCLIWarnings(parsedArgs);
 
 type ReleaseDocument = { title: string; content: string };
 type ReleaseNotes = { content: string; title?: string };
@@ -205,6 +216,9 @@ const logEnvironmentSummary = () => {
   }
   if (releaseVersion) {
     info(`Using custom release version: ${releaseVersion}`);
+  }
+  for (const warningMessage of cliWarnings) {
+    warn(warningMessage);
   }
 };
 
@@ -331,10 +345,10 @@ async function syncCommand(): Promise<{
   // git log returns newest-first; scanCommits needs chronological (oldest-first) for last-write-wins
   commits.reverse();
 
-  const { issueReferences, revertedIssueReferences, prNumbers, debugSink } = scanCommits(
-    commits,
-    effectiveIncludePaths,
-  );
+  const { issueReferences, revertedIssueReferences, prNumbers, debugSink } = scanCommits(commits, {
+    includePaths: effectiveIncludePaths,
+    includeSubjects,
+  });
 
   verbose(`Debug sink: ${JSON.stringify(debugSink, null, 2)}`);
 
