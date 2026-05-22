@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getCLIWarnings, parseCLIArgs } from "./args";
+import { parseCLIArgs } from "./args";
 import { LogLevel } from "./log";
 
 describe("parseCLIArgs", () => {
@@ -155,23 +155,192 @@ describe("parseCLIArgs", () => {
     expect(result.links).toEqual([{ url: "https://ci.example.com/run/123" }]);
   });
 
+  describe("--document / --document-file", () => {
+    it("parses --document with Title=content", () => {
+      const result = parseCLIArgs(["sync", "--document", "Changelog=# v1.0.0\n\n- first release"]);
+      expect(result.documents).toEqual([
+        { title: "Changelog", source: { kind: "inline", content: "# v1.0.0\n\n- first release" } },
+      ]);
+    });
+
+    it("parses multiple repeatable --document values", () => {
+      const result = parseCLIArgs([
+        "sync",
+        "--document",
+        "Changelog=# v1.0.0",
+        "--document=Deploy=Deployed to production.",
+      ]);
+      expect(result.documents).toEqual([
+        { title: "Changelog", source: { kind: "inline", content: "# v1.0.0" } },
+        { title: "Deploy", source: { kind: "inline", content: "Deployed to production." } },
+      ]);
+    });
+
+    it("preserves whitespace and equals signs in --document content", () => {
+      const result = parseCLIArgs(["sync", "--document", "Args=key1=value1\n  key2 = value2"]);
+      expect(result.documents).toEqual([
+        { title: "Args", source: { kind: "inline", content: "key1=value1\n  key2 = value2" } },
+      ]);
+    });
+
+    it("parses --document-file with Title=path", () => {
+      const result = parseCLIArgs(["sync", "--document-file", "Changelog=./CHANGELOG.md"]);
+      expect(result.documents).toEqual([{ title: "Changelog", source: { kind: "file", path: "./CHANGELOG.md" } }]);
+    });
+
+    it("trims title and path on --document-file", () => {
+      const result = parseCLIArgs(["sync", "--document-file", " Changelog = ./CHANGELOG.md "]);
+      expect(result.documents).toEqual([{ title: "Changelog", source: { kind: "file", path: "./CHANGELOG.md" } }]);
+    });
+
+    it("infers title from filename when --document-file is given a bare path", () => {
+      const result = parseCLIArgs(["sync", "--document-file", "./CHANGELOG.md"]);
+      expect(result.documents).toEqual([{ title: "CHANGELOG", source: { kind: "file", path: "./CHANGELOG.md" } }]);
+    });
+
+    it("infers title from basename when --document-file path has nested directories", () => {
+      const result = parseCLIArgs(["sync", "--document-file", "./docs/deploy-log.md"]);
+      expect(result.documents).toEqual([
+        { title: "deploy-log", source: { kind: "file", path: "./docs/deploy-log.md" } },
+      ]);
+    });
+
+    it("infers title from bare path with no extension", () => {
+      const result = parseCLIArgs(["sync", "--document-file", "./NOTES"]);
+      expect(result.documents).toEqual([{ title: "NOTES", source: { kind: "file", path: "./NOTES" } }]);
+    });
+
+    it("strips only the final extension when inferring title", () => {
+      const result = parseCLIArgs(["sync", "--document-file", "./release.notes.md"]);
+      expect(result.documents).toEqual([
+        { title: "release.notes", source: { kind: "file", path: "./release.notes.md" } },
+      ]);
+    });
+
+    it("throws when --document-file is bare '-' (stdin needs an explicit title)", () => {
+      expect(() => parseCLIArgs(["sync", "--document-file", "-"])).toThrow("Title=-");
+    });
+
+    it("combines --document and --document-file", () => {
+      const result = parseCLIArgs([
+        "sync",
+        "--document",
+        "Changelog=# v1.0.0",
+        "--document-file",
+        "Deploy log=./deploy.md",
+      ]);
+      expect(result.documents).toEqual([
+        { title: "Changelog", source: { kind: "inline", content: "# v1.0.0" } },
+        { title: "Deploy log", source: { kind: "file", path: "./deploy.md" } },
+      ]);
+    });
+
+    it("throws on --document without =", () => {
+      expect(() => parseCLIArgs(["sync", "--document", "no-separator"])).toThrow(
+        'Invalid --document value: "no-separator"',
+      );
+    });
+
+    it("throws on --document with empty title", () => {
+      expect(() => parseCLIArgs(["sync", "--document", "=content"])).toThrow("Document title must not be empty");
+    });
+
+    it("throws on --document with empty value", () => {
+      expect(() => parseCLIArgs(["sync", "--document", "Title="])).toThrow("Document value must not be empty");
+    });
+
+    it("throws on --document-file with empty path", () => {
+      expect(() => parseCLIArgs(["sync", "--document-file", "Title=   "])).toThrow();
+    });
+  });
+
+  describe("--release-notes / --release-notes-file", () => {
+    it("parses inline --release-notes", () => {
+      const result = parseCLIArgs(["sync", "--release-notes", "## v1.0.0\n\nFirst release."]);
+      expect(result.releaseNotes).toEqual({
+        source: { kind: "inline", content: "## v1.0.0\n\nFirst release." },
+      });
+    });
+
+    it("parses --release-notes-file", () => {
+      const result = parseCLIArgs(["sync", "--release-notes-file", "./notes.md"]);
+      expect(result.releaseNotes).toEqual({ source: { kind: "file", path: "./notes.md" } });
+    });
+
+    it("last-wins across multiple --release-notes occurrences", () => {
+      const result = parseCLIArgs([
+        "sync",
+        "--release-notes",
+        "first",
+        "--release-notes",
+        "second",
+        "--release-notes-file",
+        "./notes.md",
+      ]);
+      expect(result.releaseNotes).toEqual({ source: { kind: "file", path: "./notes.md" } });
+    });
+
+    it("throws on empty --release-notes-file path", () => {
+      expect(() => parseCLIArgs(["sync", "--release-notes-file", "  "])).toThrow();
+    });
+
+    it("leaves releaseNotes undefined when no flag is passed", () => {
+      const result = parseCLIArgs(["sync"]);
+      expect(result.releaseNotes).toBeUndefined();
+    });
+
+    it("preserves argv order across --release-notes-file then --release-notes", () => {
+      // Regression: previously the parser grouped values by flag name, so a later inline note
+      // could be overridden by an earlier file note. Last on the command line should always win.
+      const result = parseCLIArgs([
+        "sync",
+        "--release-notes-file",
+        "./generated.md",
+        "--release-notes",
+        "manual override",
+      ]);
+      expect(result.releaseNotes).toEqual({ source: { kind: "inline", content: "manual override" } });
+    });
+
+    it("preserves argv order across --release-notes then --release-notes-file", () => {
+      const result = parseCLIArgs(["sync", "--release-notes", "manual", "--release-notes-file", "./final.md"]);
+      expect(result.releaseNotes).toEqual({ source: { kind: "file", path: "./final.md" } });
+    });
+  });
+
+  describe("argv order across --document / --document-file", () => {
+    it("preserves argv order so same-title last-wins works across flag types", () => {
+      // The API upserts documents by title with later entries winning. The CLI must therefore send
+      // documents in the order the user wrote them on the command line, not bucketed by flag type.
+      const result = parseCLIArgs([
+        "sync",
+        "--document-file",
+        "Changelog=./from-file.md",
+        "--document",
+        "Changelog=inline override",
+      ]);
+      expect(result.documents).toEqual([
+        { title: "Changelog", source: { kind: "file", path: "./from-file.md" } },
+        { title: "Changelog", source: { kind: "inline", content: "inline override" } },
+      ]);
+    });
+
+    it("interleaves inline and file documents in argv order", () => {
+      const result = parseCLIArgs([
+        "sync",
+        "--document",
+        "A=inline-a",
+        "--document-file",
+        "B=./b.md",
+        "--document",
+        "C=inline-c",
+      ]);
+      expect(result.documents.map((d) => d.title)).toEqual(["A", "B", "C"]);
+    });
+  });
+
   it("throws on unknown flags (strict mode)", () => {
     expect(() => parseCLIArgs(["--unknown-flag"])).toThrow();
-  });
-
-  it("returns no warning when --name is used with update", () => {
-    const result = parseCLIArgs(["update", "--name", "Release 1.2.0"]);
-    expect(getCLIWarnings(result)).toEqual([]);
-  });
-
-  it("returns no warning when --name is used with complete", () => {
-    const result = parseCLIArgs(["complete", "--name", "Release 1.2.0"]);
-    expect(getCLIWarnings(result)).toEqual([]);
-  });
-
-  it("returns no warning when --name is used with sync", () => {
-    const result = parseCLIArgs(["sync", "--name", "Release 1.2.0"]);
-    expect(getCLIWarnings(result)).toEqual([]);
   });
 
   it("defaults --timeout to 60 seconds", () => {

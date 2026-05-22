@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { LinearClient, LinearClientOptions } from "@linear/sdk";
 import {
   assertGitAvailable,
@@ -21,7 +22,7 @@ import {
   IssueReference,
   RepoInfo,
 } from "./types";
-import { getCLIWarnings, parseCLIArgs, ReleaseLink } from "./args";
+import { parseCLIArgs, ReleaseContentSource, ReleaseDocumentSpec, ReleaseLink, ReleaseNoteSpec } from "./args";
 import { error, info, setJsonMode, setLogLevel, setStderr, verbose, warn } from "./log";
 import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
@@ -51,6 +52,10 @@ Options:
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
   --link <URL|Label=URL>       Add a link to the targeted release (repeatable)
+  --document <Title=content> Attach a document to the release (repeatable, Title required)
+  --document-file <[Title=]path> Attach a document from a file (title inferred from basename if omitted; "-" for stdin requires Title=-; repeatable)
+  --release-notes <content>  Set the release notes covering this release (last-wins)
+  --release-notes-file <path> Set release notes from a file ("-" for stdin; last-wins)
   --base-ref=<ref>           Override sync scan base (exclusive; scans <ref>..HEAD)
   --timeout=<seconds>        Abort if the operation exceeds this duration (default: 60)
   --json                     Output result as JSON (logs emitted as JSON Lines on stderr)
@@ -70,6 +75,9 @@ Examples:
   linear-release sync --include-paths="apps/web/**,packages/**"
   linear-release sync --link "https://ci.example.com/run/123"
   linear-release sync --link "Pipeline=https://ci.example.com/run/123"
+  linear-release sync --document-file "Changelog=./CHANGELOG.md"
+  linear-release sync --document-file ./CHANGELOG.md
+  linear-release sync --release-notes-file ./release-notes.md
   linear-release sync --base-ref=<last-released-ref> --include-paths="apps/web/**"
 `);
   process.exit(0);
@@ -98,11 +106,63 @@ const {
   baseRef,
   includePaths,
   links,
+  documents: documentSpecs,
+  releaseNotes: releaseNotesSpec,
   jsonOutput,
   timeoutSeconds,
   logLevel,
 } = parsedArgs;
-const cliWarnings = getCLIWarnings(parsedArgs);
+
+type ReleaseDocument = { title: string; content: string };
+type ReleaseNotes = { content: string; title?: string };
+
+let stdinContent: string | undefined;
+function readStdinOnce(flag: string): string {
+  if (stdinContent === undefined) {
+    stdinContent = readFileSync(0, "utf8");
+  } else {
+    throw new Error(
+      `${flag} cannot consume stdin: another flag already read from stdin. Use "-" with at most one --document-file or --release-notes-file.`,
+    );
+  }
+  return stdinContent;
+}
+
+function resolveContent(source: ReleaseContentSource, flag: string): string {
+  if (source.kind === "inline") {
+    return source.content;
+  }
+  if (source.path === "-") {
+    return readStdinOnce(flag);
+  }
+  try {
+    return readFileSync(source.path, "utf8");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to read ${flag} file "${source.path}": ${message}`);
+  }
+}
+
+function resolveDocuments(specs: ReleaseDocumentSpec[]): ReleaseDocument[] {
+  const flag = "--document-file";
+  return specs.map((spec) => ({ title: spec.title, content: resolveContent(spec.source, flag) }));
+}
+
+function resolveReleaseNotes(spec: ReleaseNoteSpec | undefined): ReleaseNotes | undefined {
+  if (!spec) return undefined;
+  return { content: resolveContent(spec.source, "--release-notes-file") };
+}
+
+let documents: ReleaseDocument[];
+let releaseNotes: ReleaseNotes | undefined;
+try {
+  documents = resolveDocuments(documentSpecs);
+  releaseNotes = resolveReleaseNotes(releaseNotesSpec);
+} catch (err) {
+  const message = err instanceof Error ? err.message : String(err);
+  error(`${message} (run linear-release --help for usage)`);
+  process.exit(1);
+}
 setLogLevel(logLevel);
 if (jsonOutput) {
   setStderr(true);
@@ -130,6 +190,14 @@ function formatLinkSummary(linksToFormat: ReleaseLink[]): string {
   return linksToFormat.length > 0 ? `, links [${linksToFormat.map(formatLinkForLog).join(", ")}]` : "";
 }
 
+function formatDocumentsSummary(docs: ReleaseDocument[]): string {
+  return docs.length > 0 ? `, documents [${docs.map((d) => d.title).join(", ")}]` : "";
+}
+
+function formatReleaseNotesSummary(notes: ReleaseNotes | undefined): string {
+  return notes ? `, release notes (${notes.content.length} chars)` : "";
+}
+
 const logEnvironmentSummary = () => {
   info(`linear-release v${getCliVersion()}`);
   if (releaseName) {
@@ -137,9 +205,6 @@ const logEnvironmentSummary = () => {
   }
   if (releaseVersion) {
     info(`Using custom release version: ${releaseVersion}`);
-  }
-  for (const w of cliWarnings) {
-    warn(w);
   }
 };
 
@@ -279,13 +344,24 @@ async function syncCommand(): Promise<{
 
   const repoInfo = getRepoInfo();
 
-  const release = await syncRelease(issueReferences, revertedIssueReferences, prNumbers, repoInfo, debugSink, links);
+  const release = await syncRelease(
+    issueReferences,
+    revertedIssueReferences,
+    prNumbers,
+    repoInfo,
+    debugSink,
+    links,
+    documents,
+    releaseNotes,
+  );
   const issueIds = issueReferences.map((f) => f.identifier);
   const parts: string[] = [];
   if (issueIds.length > 0) parts.push(`issues [${issueIds.join(", ")}]`);
   if (prNumbers.length > 0) parts.push(`pull requests [${prNumbers.map((n) => `#${n}`).join(", ")}]`);
   const scanned = parts.length > 0 ? parts.join(", ") : "no new issues or pull requests";
-  info(`Synced to release ${release.name} (${formatVersion(release)}): ${scanned}${formatLinkSummary(links)}`);
+  info(
+    `Synced to release ${release.name} (${formatVersion(release)}): ${scanned}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
+  );
   if (scanBase.kind === "base-ref") {
     info(`Stored release baseline: ${(release.commitSha ?? currentCommit.commit).slice(0, 7)}`);
   }
@@ -313,10 +389,12 @@ async function completeCommand(): Promise<{
     version: releaseVersion,
     commitSha: commitSha ?? undefined,
     links,
+    documents,
+    releaseNotes,
   });
   if (result.success) {
     info(
-      `Completed release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)})${formatLinkSummary(links)}`,
+      `Completed release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)})${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
     );
   } else {
     throw new Error("Failed to complete release");
@@ -350,6 +428,8 @@ async function updateCommand(): Promise<{
       version: releaseVersion,
       name: releaseName,
       links,
+      documents,
+      releaseNotes,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -358,7 +438,7 @@ async function updateCommand(): Promise<{
 
   if (result.success) {
     info(
-      `Updated release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)}) to stage ${result.release?.stageName}${formatLinkSummary(links)}`,
+      `Updated release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)}) to stage ${result.release?.stageName}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
     );
   } else {
     throw new Error("Failed to update release");
@@ -468,6 +548,8 @@ async function syncRelease(
   repoInfo: RepoInfo | null,
   debugSink: DebugSink,
   releaseLinks: ReleaseLink[],
+  releaseDocuments: ReleaseDocument[],
+  releaseNotesValue: ReleaseNotes | undefined,
 ): Promise<Release> {
   const currentSha = await getCurrentGitInfo().commit;
   if (!currentSha) {
@@ -504,6 +586,8 @@ async function syncRelease(
         issueReferences,
         revertedIssueReferences: revertedIssueReferences.length > 0 ? revertedIssueReferences : undefined,
         links: releaseLinks.length > 0 ? releaseLinks : undefined,
+        documents: releaseDocuments.length > 0 ? releaseDocuments : undefined,
+        releaseNotes: releaseNotesValue,
         pullRequestReferences: prNumbers.map((number) => ({
           repositoryOwner: owner,
           repositoryName: name,
@@ -534,11 +618,20 @@ async function completeRelease(options: {
   version?: string;
   commitSha?: string;
   links: ReleaseLink[];
+  documents: ReleaseDocument[];
+  releaseNotes?: ReleaseNotes;
 }): Promise<{
   success: boolean;
   release: { id: string; name: string; version?: string; url?: string } | null;
 }> {
-  const { name, version, commitSha, links: releaseLinks } = options;
+  const {
+    name,
+    version,
+    commitSha,
+    links: releaseLinks,
+    documents: releaseDocuments,
+    releaseNotes: notesValue,
+  } = options;
 
   const response = await apiRequest<AccessKeyCompleteReleaseResponse>(
     `
@@ -560,6 +653,8 @@ async function completeRelease(options: {
         version,
         commitSha,
         links: releaseLinks.length > 0 ? releaseLinks : undefined,
+        documents: releaseDocuments.length > 0 ? releaseDocuments : undefined,
+        releaseNotes: notesValue,
       },
     },
   );
@@ -572,6 +667,8 @@ async function updateReleaseByPipeline(options: {
   version?: string;
   name?: string;
   links: ReleaseLink[];
+  documents: ReleaseDocument[];
+  releaseNotes?: ReleaseNotes;
 }): Promise<{
   success: boolean;
   release: {
@@ -582,7 +679,7 @@ async function updateReleaseByPipeline(options: {
     stageName: string;
   } | null;
 }> {
-  const { stage, version, name, links: releaseLinks } = options;
+  const { stage, version, name, links: releaseLinks, documents: releaseDocuments, releaseNotes: notesValue } = options;
   const response = await apiRequest<AccessKeyUpdateByPipelineResponse>(
     `
     mutation releaseUpdateByPipelineByAccessKey($input: ReleaseUpdateByPipelineInputBase!) {
@@ -606,6 +703,8 @@ async function updateReleaseByPipeline(options: {
         version,
         name,
         links: releaseLinks.length > 0 ? releaseLinks : undefined,
+        documents: releaseDocuments.length > 0 ? releaseDocuments : undefined,
+        releaseNotes: notesValue,
       },
     },
   );
