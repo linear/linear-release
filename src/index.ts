@@ -67,6 +67,7 @@ Options:
   --base-ref=<ref>           Override sync scan base (exclusive; scans <ref>..HEAD)
   --timeout=<seconds>        Abort if the operation exceeds this duration (default: 60)
   --json                     Output result as JSON (logs emitted as JSON Lines on stderr)
+  --dry-run                  Scan and call read-only Linear APIs, but skip create/update mutations
   --quiet                    Suppress info-level output (warnings and errors still printed)
   --verbose                  Print detailed progress including debug diagnostics
   -v, --version              Show version number
@@ -119,6 +120,7 @@ const {
   documents: documentSpecs,
   releaseNotes: releaseNotesSpec,
   jsonOutput,
+  dryRun,
   timeoutSeconds,
   logLevel,
 } = parsedArgs;
@@ -358,6 +360,21 @@ async function syncCommand(): Promise<{
 
   const repoInfo = getRepoInfo();
 
+  const issueIds = issueReferences.map((f) => f.identifier);
+  const parts: string[] = [];
+  if (issueIds.length > 0) parts.push(`issues [${issueIds.join(", ")}]`);
+  if (prNumbers.length > 0) parts.push(`pull requests [${prNumbers.map((n) => `#${n}`).join(", ")}]`);
+  const scanned = parts.length > 0 ? parts.join(", ") : "no new issues or pull requests";
+
+  if (dryRun) {
+    const targetName = releaseName ?? "(server-assigned)";
+    const versionPart = releaseVersion ? `version: ${releaseVersion}` : "no version set";
+    info(
+      `[dry-run] Would sync release ${targetName} (${versionPart}): ${scanned}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
+    );
+    return null;
+  }
+
   const release = await syncRelease(
     issueReferences,
     revertedIssueReferences,
@@ -368,11 +385,6 @@ async function syncCommand(): Promise<{
     documents,
     releaseNotes,
   );
-  const issueIds = issueReferences.map((f) => f.identifier);
-  const parts: string[] = [];
-  if (issueIds.length > 0) parts.push(`issues [${issueIds.join(", ")}]`);
-  if (prNumbers.length > 0) parts.push(`pull requests [${prNumbers.map((n) => `#${n}`).join(", ")}]`);
-  const scanned = parts.length > 0 ? parts.join(", ") : "no new issues or pull requests";
   info(
     `Synced to release ${release.name} (${formatVersion(release)}): ${scanned}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
   );
@@ -397,6 +409,15 @@ async function completeCommand(): Promise<{
 
   const currentCommit = await getCurrentGitInfo();
   const commitSha = currentCommit.commit;
+
+  if (dryRun) {
+    const targetName = releaseName ?? "(current release)";
+    const versionPart = releaseVersion ? `version: ${releaseVersion}` : "no version set";
+    info(
+      `[dry-run] Would complete release ${targetName} (${versionPart})${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
+    );
+    return null;
+  }
 
   const result = await completeRelease({
     name: releaseName,
@@ -433,6 +454,15 @@ async function updateCommand(): Promise<{
 
   if (!stageName) {
     throw new Error("--stage=<stage-name> is required for the update command");
+  }
+
+  if (dryRun) {
+    const targetName = releaseName ?? "(current release)";
+    const versionPart = releaseVersion ? `version: ${releaseVersion}` : "no version set";
+    info(
+      `[dry-run] Would update release ${targetName} (${versionPart}) to stage ${stageName}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
+    );
+    return null;
   }
 
   let result;

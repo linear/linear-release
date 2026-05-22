@@ -63,6 +63,16 @@ describe("parseCLIArgs", () => {
     expect(result.jsonOutput).toBe(true);
   });
 
+  it("defaults --dry-run to false", () => {
+    const result = parseCLIArgs([]);
+    expect(result.dryRun).toBe(false);
+  });
+
+  it("parses --dry-run to true when passed", () => {
+    const result = parseCLIArgs(["--dry-run"]);
+    expect(result.dryRun).toBe(true);
+  });
+
   it("splits --include-paths by comma and trims whitespace", () => {
     const result = parseCLIArgs(["--include-paths", "apps/web/** , packages/** , libs/core/**"]);
     expect(result.includePaths).toEqual(["apps/web/**", "packages/**", "libs/core/**"]);
