@@ -46,8 +46,10 @@ const COMMON_SUBJECT_PATTERNS: RegExp[] = [
   new RegExp(`^\\s*\\[(\\w{1,${MAX_KEY_LENGTH}})-([0-9]{1,9})\\]`, "i"),
   // `(ENG-123) My change`
   new RegExp(`^\\s*\\((\\w{1,${MAX_KEY_LENGTH}})-([0-9]{1,9})\\)`, "i"),
-  // `ENG-123 My change`
-  new RegExp(`^\\s*(\\w{1,${MAX_KEY_LENGTH}})-([0-9]{1,9})(?=\\s)`, "i"),
+  // `ENG-123 My change` or `ENG-123: My change` (colon is allowed before the
+  // whitespace; `ENG-123:foo` without the space stays unmatched to keep the
+  // delimiter unambiguous).
+  new RegExp(`^\\s*(\\w{1,${MAX_KEY_LENGTH}})-([0-9]{1,9})(?=:?\\s)`, "i"),
 ];
 
 /**

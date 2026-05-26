@@ -31,6 +31,7 @@ export type ParsedCLIArgs = {
   documents: ReleaseDocumentSpec[];
   releaseNotes?: ReleaseNoteSpec;
   jsonOutput: boolean;
+  dryRun: boolean;
   timeoutSeconds: number;
   logLevel: LogLevel;
 };
@@ -138,6 +139,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
       "release-notes": { type: "string", multiple: true },
       "release-notes-file": { type: "string", multiple: true },
       json: { type: "boolean", default: false },
+      "dry-run": { type: "boolean", default: false },
       timeout: { type: "string" },
       quiet: { type: "boolean", default: false },
       verbose: { type: "boolean", default: false },
@@ -228,6 +230,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
     documents,
     releaseNotes,
     jsonOutput: values.json ?? false,
+    dryRun: values["dry-run"] ?? false,
     timeoutSeconds,
     logLevel,
   };
