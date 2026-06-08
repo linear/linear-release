@@ -382,11 +382,16 @@ export function ensureCommitAvailable(sha: string, cwd: string = process.cwd()):
   );
 }
 
+// A wide commit range outgrows Node's 1 MB default; keep a finite ceiling
+// rather than Infinity to bound memory.
+const RUN_LOG_MAX_BUFFER = 256 * 1024 * 1024;
+
 function runLog(rangeArgs: string, cwd: string): CommitContext[] {
   const output = execSync(`git log --format=%H%x1f%B%x1f%D%x1e ${rangeArgs}`, {
     cwd,
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf8",
+    maxBuffer: RUN_LOG_MAX_BUFFER,
   });
   return output
     .split("\x1e")
