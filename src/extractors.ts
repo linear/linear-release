@@ -201,6 +201,43 @@ function matchCommonSubjectPatterns(message: string): IdentifierMatch[] {
 }
 
 /**
+ * Extract identifiers from a user-supplied subject pattern (the `--issue-pattern`
+ * flag). The regex must capture the team key in group 1 and the issue number in
+ * group 2. It is matched against the commit subject (first line) and scanned
+ * globally, so a single subject can carry more than one identifier.
+ *
+ * The flag exists for subject conventions the built-in patterns don't recognize
+ * — most commonly Conventional Commits, where the identifier follows the type and
+ * scope (`feat(scope)[ENG-123]: …`, `fix[ENG-123]: …`) rather than leading the
+ * subject. Example pattern: `\w+(?:\([^)]*\))?!?\[(\w+)-(\d+)\]`.
+ */
+function matchCustomSubjectPattern(message: string, pattern: string | null | undefined): IdentifierMatch[] {
+  if (!pattern) return [];
+
+  const subject = getCommitSubject(message);
+  // Force global so the loop advances; force case-insensitive to match the
+  // built-in identifier regexes. The team key is uppercased on output anyway.
+  const regex = new RegExp(pattern, "gi");
+  const results: IdentifierMatch[] = [];
+  let match;
+  while ((match = regex.exec(subject)) !== null) {
+    // A pattern that can match empty (e.g. `(\w*)-(\d*)`) would loop forever.
+    if (match.index === regex.lastIndex) regex.lastIndex++;
+
+    const [, teamKey, numberString] = match;
+    if (!teamKey || !numberString || !/^[0-9]+$/.test(numberString)) continue;
+    // Reject leading zeros (e.g. ENG-0004), matching parseMatch.
+    if (Number(numberString).toString().length !== numberString.length) continue;
+
+    results.push({
+      rawIdentifier: `${teamKey}-${numberString}`,
+      identifier: `${teamKey.toUpperCase()}-${Number(numberString)}`,
+    });
+  }
+  return results;
+}
+
+/**
  * Extract issue identifiers from text only when preceded by a magic word.
  * Processes text line-by-line, matching Linear's detection behavior.
  */
@@ -230,7 +267,19 @@ export type ExtractedIdentifier = {
   source: "branch_name" | "commit_message";
 };
 
-export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): ExtractedIdentifier[] {
+export type ExtractOptions = {
+  /**
+   * User-supplied regex (source string) capturing the team key in group 1 and
+   * the issue number in group 2. Applied to the commit subject. See the
+   * `--issue-pattern` flag and matchCustomSubjectPattern.
+   */
+  issuePattern?: string | null;
+};
+
+export function extractLinearIssueIdentifiersForCommit(
+  commit: CommitContext,
+  options: ExtractOptions = {},
+): ExtractedIdentifier[] {
   if (!commit) {
     return [];
   }
@@ -267,7 +316,11 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): E
   const scanTarget = messageDepth % 2 === 1 ? afterTitle : (commit.message ?? "");
   const message = stripSquashBlock(scanTarget);
   if (message.length > 0) {
-    for (const match of [...matchCommonSubjectPatterns(message), ...matchMagicWordIdentifiers(message)]) {
+    for (const match of [
+      ...matchCommonSubjectPatterns(message),
+      ...matchCustomSubjectPattern(message, options.issuePattern),
+      ...matchMagicWordIdentifiers(message),
+    ]) {
       if (!found.has(match.identifier)) {
         found.set(match.identifier, {
           identifier: match.identifier,

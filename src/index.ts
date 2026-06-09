@@ -59,6 +59,7 @@ Options:
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
   --include-subjects=<regex> Filter commits whose subject (first line) matches the regex
+  --issue-pattern=<regex>    Extract issue identifiers from a custom subject format; capture the team key in group 1 and the issue number in group 2
   --link <URL|Label=URL>       Add a link to the targeted release (repeatable)
   --document <Title=content> Attach a document to the release (repeatable, Title required)
   --document-file <[Title=]path> Attach a document from a file (title inferred from basename if omitted; "-" for stdin requires Title=-; repeatable)
@@ -83,6 +84,7 @@ Examples:
   linear-release update --stage=production
   linear-release sync --include-paths="apps/web/**,packages/**"
   linear-release sync --include-subjects="[A-Z]{2,}-[0-9]+"
+  linear-release sync --issue-pattern="\\w+(?:\\([^)]*\\))?!?\\[(\\w+)-(\\d+)\\]"
   linear-release sync --link "https://ci.example.com/run/123"
   linear-release sync --link "Pipeline=https://ci.example.com/run/123"
   linear-release sync --document-file "Changelog=./CHANGELOG.md"
@@ -116,6 +118,7 @@ const {
   baseRef,
   includePaths,
   includeSubjects,
+  issuePattern,
   links,
   documents: documentSpecs,
   releaseNotes: releaseNotesSpec,
@@ -350,6 +353,7 @@ async function syncCommand(): Promise<{
   const { issueReferences, revertedIssueReferences, prNumbers, debugSink } = scanCommits(commits, {
     includePaths: effectiveIncludePaths,
     includeSubjects,
+    issuePattern,
   });
 
   verbose(`Debug sink: ${JSON.stringify(debugSink, null, 2)}`);

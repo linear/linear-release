@@ -120,6 +120,30 @@ describe("parseCLIArgs", () => {
     expect(() => parseCLIArgs(["--include-subjects", "([unclosed"])).toThrow(/Invalid --include-subjects regex/);
   });
 
+  it("defaults --issue-pattern to null", () => {
+    const result = parseCLIArgs([]);
+    expect(result.issuePattern).toBeNull();
+  });
+
+  it("returns --issue-pattern as the raw pattern string", () => {
+    const pattern = "\\w+(?:\\([^)]*\\))?!?\\[(\\w+)-(\\d+)\\]";
+    const result = parseCLIArgs(["--issue-pattern", pattern]);
+    expect(result.issuePattern).toBe(pattern);
+  });
+
+  it("treats empty --issue-pattern as no pattern", () => {
+    const result = parseCLIArgs(["--issue-pattern", ""]);
+    expect(result.issuePattern).toBeNull();
+  });
+
+  it("throws a helpful error on invalid --issue-pattern regex", () => {
+    expect(() => parseCLIArgs(["--issue-pattern", "([unclosed"])).toThrow(/Invalid --issue-pattern regex/);
+  });
+
+  it("throws when --issue-pattern has fewer than two capturing groups", () => {
+    expect(() => parseCLIArgs(["--issue-pattern", "\\[(\\w+-\\d+)\\]"])).toThrow(/at least two capturing groups/);
+  });
+
   it("parses repeatable --link values", () => {
     const result = parseCLIArgs([
       "sync",

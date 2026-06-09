@@ -895,3 +895,74 @@ describe("extractPullRequestNumbersForCommit — GitLab merge request trailer", 
     expect(result).toEqual([]);
   });
 });
+
+describe("custom issue pattern (--issue-pattern)", () => {
+  // Conventional Commits: the identifier follows the type and optional scope, so
+  // the built-in start-anchored subject patterns do not see it.
+  const CONVENTIONAL = "\\w+(?:\\([^)]*\\))?!?\\[(\\w+)-(\\d+)\\]";
+
+  it.each([
+    ["with scope", "feat(routing)[ENG-123]: add stop reordering", "ENG-123"],
+    ["without scope", "fix[ENG-123]: handle empty payload", "ENG-123"],
+    ["with breaking-change bang", "feat(api)![ENG-7]: drop v1", "ENG-7"],
+  ])("extracts a Conventional Commits identifier %s", (_name, message, expected) => {
+    const result = extractLinearIssueIdentifiersForCommit({ sha: "abc", message }, { issuePattern: CONVENTIONAL });
+    expect(ids(result)).toEqual([expected]);
+    expect(result[0]!.source).toBe("commit_message");
+  });
+
+  it("is not applied when no pattern is provided", () => {
+    const result = extractLinearIssueIdentifiersForCommit({ sha: "abc", message: "feat(routing)[ENG-123]: x" });
+    expect(ids(result)).toEqual([]);
+  });
+
+  it("normalizes case and strips leading zeros on the number", () => {
+    const result = extractLinearIssueIdentifiersForCommit(
+      { sha: "abc", message: "feat[eng-45]: lowercase team key" },
+      { issuePattern: CONVENTIONAL },
+    );
+    expect(ids(result)).toEqual(["ENG-45"]);
+  });
+
+  it("rejects identifiers whose number has a leading zero", () => {
+    const result = extractLinearIssueIdentifiersForCommit(
+      { sha: "abc", message: "feat[ENG-007]: bond" },
+      { issuePattern: CONVENTIONAL },
+    );
+    expect(ids(result)).toEqual([]);
+  });
+
+  it("extracts multiple identifiers from one subject", () => {
+    const result = extractLinearIssueIdentifiersForCommit(
+      { sha: "abc", message: "feat[ENG-1] feat[ENG-2]: two" },
+      { issuePattern: CONVENTIONAL },
+    );
+    expect(ids(result)).toEqual(["ENG-1", "ENG-2"]);
+  });
+
+  it("only scans the subject, not the body", () => {
+    const result = extractLinearIssueIdentifiersForCommit(
+      { sha: "abc", message: "chore: bump\n\nfeat[ENG-9]: stale body reference" },
+      { issuePattern: CONVENTIONAL },
+    );
+    expect(ids(result)).toEqual([]);
+  });
+
+  it("composes with branch-name extraction without duplicating", () => {
+    const result = extractLinearIssueIdentifiersForCommit(
+      { sha: "abc", branchName: "feature/ENG-123-x", message: "feat[ENG-123]: same issue" },
+      { issuePattern: CONVENTIONAL },
+    );
+    expect(ids(result)).toEqual(["ENG-123"]);
+    // Branch name wins the source since it is scanned first.
+    expect(result[0]!.source).toBe("branch_name");
+  });
+
+  it("does not loop forever on a zero-width-capable pattern", () => {
+    const result = extractLinearIssueIdentifiersForCommit(
+      { sha: "abc", message: "ENG-1 ENG-2" },
+      { issuePattern: "(\\w*)-(\\d*)" },
+    );
+    expect(ids(result)).toEqual(["ENG-1", "ENG-2"]);
+  });
+});

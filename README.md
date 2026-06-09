@@ -156,6 +156,7 @@ linear-release update --stage="in review" --name="Release 1.2.0"
 | `--stage`              | `update`                     | Target deployment stage (required for `update`)                                                                                                                                                                                                                      |
 | `--include-paths`      | `sync`                       | Filter commits by changed file paths                                                                                                                                                                                                                                 |
 | `--include-subjects`   | `sync`                       | Filter commits whose subject (first line) matches a regex                                                                                                                                                                                                            |
+| `--issue-pattern`      | `sync`                       | Extract issue identifiers from a custom subject format via a regex (group 1 = team key, group 2 = issue number). Use for conventions the built-in detection misses, e.g. Conventional Commits.                                                                       |
 | `--link`               | `sync`, `complete`, `update` | Add a link to the targeted release. Use `--link "https://example.com"` or `--link "Label=https://example.com"`; repeat the flag to add multiple links.                                                                                                               |
 | `--document`           | `sync`, `complete`, `update` | Attach a document. `--document "Title=...markdown..."`; repeat for multiple docs. Existing documents with the same title on the release are updated.                                                                                                                 |
 | `--document-file`      | `sync`, `complete`, `update` | Same as `--document` but reads the body from a file: `--document-file "Title=path/to/file.md"`. Use `-` to read from stdin.                                                                                                                                          |
@@ -232,6 +233,29 @@ linear-release sync --include-subjects="^(feat|fix|perf):"
 The regex is matched against the commit subject only (everything before the first newline) — body lines such as squash dumps or co-author trailers are ignored. Use the regex's own `|` alternation to combine multiple patterns; remember to escape regex metacharacters in shell strings.
 
 `--include-subjects` composes with `--include-paths`: a commit must pass both filters to be scanned.
+
+### Custom Issue Patterns
+
+Out of the box, identifiers are detected from branch names, magic words (`Fixes ENG-123`), and common subject conventions where the identifier leads the subject — `[ENG-123] …`, `(ENG-123) …`, `ENG-123: …`. Some teams instead put the identifier _after_ a [Conventional Commits](https://www.conventionalcommits.org/) type and scope, which the built-in patterns don't recognize:
+
+```
+feat(routing)[ENG-123]: add stop reordering
+fix[ENG-123]: handle empty payload
+```
+
+Use `--issue-pattern` to teach the scanner your convention. The flag takes a regex whose **first capture group is the team key** and **second capture group is the issue number**:
+
+```bash
+# Conventional Commits: type, optional (scope), optional !, then [TEAM-NUMBER]
+linear-release sync --issue-pattern="\w+(?:\([^)]*\))?!?\[(\w+)-(\d+)\]"
+
+# A bespoke convention, e.g. "JIRA: ENG-123 | …"
+linear-release sync --issue-pattern="^[A-Z]+:\s+(\w+)-(\d+)"
+```
+
+The pattern is matched against the commit subject (first line) and scanned globally, so a subject may carry more than one identifier. Matching is case-insensitive; the team key is upper-cased and leading zeros on the number are stripped (`eng-0045` → `ENG-45`), and numbers written with a leading zero are rejected as invalid identifiers. Matches are merged with the built-in detection rather than replacing it, and de-duplicated across branch name and message.
+
+> The CLI validates that the regex compiles and has at least two capturing groups, but it cannot know which substrings you intend as the team key and number — double-check the capture groups against a sample commit with `--dry-run --verbose`.
 
 ### Release Links
 

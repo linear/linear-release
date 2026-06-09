@@ -228,4 +228,33 @@ describe("scanCommits", () => {
       expect(ids(result.revertedIssueReferences)).toEqual([]);
     });
   });
+
+  describe("--issue-pattern extraction", () => {
+    const CONVENTIONAL = "\\w+(?:\\([^)]*\\))?!?\\[(\\w+)-(\\d+)\\]";
+
+    it("extracts identifiers from Conventional Commits subjects", () => {
+      const commits: CommitContext[] = [
+        { sha: "c1", message: "feat(routing)[ENG-100]: add stop reordering" },
+        { sha: "c2", message: "fix[ENG-200]: handle empty payload" },
+      ];
+      const result = scanCommits(commits, { issuePattern: CONVENTIONAL });
+      expect(ids(result.issueReferences)).toEqual(["ENG-100", "ENG-200"]);
+    });
+
+    it("extracts nothing from those subjects without the pattern", () => {
+      const commits: CommitContext[] = [{ sha: "c1", message: "feat(routing)[ENG-100]: add stop reordering" }];
+      const result = scanCommits(commits, {});
+      expect(ids(result.issueReferences)).toEqual([]);
+    });
+
+    it("records the pattern on the debug sink", () => {
+      const result = scanCommits([{ sha: "c1", message: "feat[ENG-1]: x" }], { issuePattern: CONVENTIONAL });
+      expect(result.debugSink.issuePattern).toBe(CONVENTIONAL);
+    });
+
+    it("leaves issuePattern null when not provided", () => {
+      const result = scanCommits([{ sha: "c1", message: "anything" }], {});
+      expect(result.debugSink.issuePattern).toBeNull();
+    });
+  });
 });

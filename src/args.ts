@@ -27,6 +27,7 @@ export type ParsedCLIArgs = {
   baseRef?: string;
   includePaths: string[];
   includeSubjects: string | null;
+  issuePattern: string | null;
   links: ReleaseLink[];
   documents: ReleaseDocumentSpec[];
   releaseNotes?: ReleaseNoteSpec;
@@ -68,6 +69,21 @@ function parseAbsoluteUrl(value: string): URL | undefined {
     return new URL(value);
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * Counts capturing groups in an already-valid regex source by appending an
+ * empty alternative (`|`) — which forces a match against the empty string — and
+ * reading the result arity. Returns Infinity if the probe can't be built, so a
+ * regex that already compiled is never wrongly rejected for group count.
+ */
+function countCapturingGroups(source: string): number {
+  try {
+    const probe = new RegExp(`${source}|`);
+    return (probe.exec("")?.length ?? 1) - 1;
+  } catch {
+    return Number.POSITIVE_INFINITY;
   }
 }
 
@@ -133,6 +149,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
       "base-ref": { type: "string" },
       "include-paths": { type: "string" },
       "include-subjects": { type: "string" },
+      "issue-pattern": { type: "string" },
       link: { type: "string", multiple: true },
       document: { type: "string", multiple: true },
       "document-file": { type: "string", multiple: true },
@@ -177,6 +194,24 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
       throw new Error(`Invalid --include-subjects regex: ${detail}`);
     }
     includeSubjects = rawIncludeSubjects;
+  }
+
+  let issuePattern: string | null = null;
+  const rawIssuePattern = values["issue-pattern"];
+  if (rawIssuePattern !== undefined && rawIssuePattern.length > 0) {
+    try {
+      new RegExp(rawIssuePattern);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(`Invalid --issue-pattern regex: ${detail}`);
+    }
+    if (countCapturingGroups(rawIssuePattern) < 2) {
+      throw new Error(
+        `Invalid --issue-pattern: regex must have at least two capturing groups — group 1 for the team key and group 2 for the issue number ` +
+          `(e.g. "\\w+(?:\\([^)]*\\))?!?\\[(\\w+)-(\\d+)\\]" for Conventional Commits).`,
+      );
+    }
+    issuePattern = rawIssuePattern;
   }
   const command = positionals[0] || "sync";
   const links = (values.link ?? []).map(parseReleaseLink);
@@ -226,6 +261,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
           .filter((p) => p.length > 0)
       : [],
     includeSubjects,
+    issuePattern,
     links,
     documents,
     releaseNotes,
