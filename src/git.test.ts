@@ -493,6 +493,15 @@ type TempRepoReleaseBranch = {
   };
 };
 
+type TempRepoStaleMerge = {
+  cwd: string;
+  commits: {
+    base: string;
+    staleMerge: string; // Merge of feat/ABC-1-stale — edited app-a/ only, merged after app-b/ landed
+    subjectMerge: string; // Merge of feat/XYZ-2-impl — edited app-b/, key only on the merge subject (HEAD)
+  };
+};
+
 function runGit(command: string, cwd: string): string {
   return execSync(`git ${command}`, {
     cwd,
@@ -727,6 +736,52 @@ function createTempRepoReleaseBranch(): TempRepoReleaseBranch {
   runGit("branch -D rel/2026-05-06", cwd);
 
   return { cwd, commits: { base, headMerge } };
+}
+
+/**
+ * Two PR merges into main, each carrying its issue key only in the branch name
+ * (no content commit carries a key):
+ *  - feat/ABC-1-stale is rooted at `base`, edits app-a/ only, and is merged
+ *    AFTER app-b/ appears on main — a stale branch never rebased. Its merge is
+ *    not TREESAME to its first parent for app-b/ (which advanced on main while
+ *    the branch was open), so `--full-history` keeps it under an app-b pathspec
+ *    even though it delivered nothing to app-b/.
+ *  - feat/XYZ-2-impl is rooted at the stale merge and genuinely edits app-b/.
+ *    Its key lives only on the merge subject, so dropping the merge would lose
+ *    it — the exact case #62 fixed.
+ */
+function createTempRepoStaleMerge(): TempRepoStaleMerge {
+  const { cwd, base } = initTempRepo({
+    prefix: "linear-release-stale-merge-",
+    dirs: ["app-a", "app-b"],
+    seedFile: { path: "app-a/file.txt", content: "a0" },
+  });
+
+  runGit(`checkout -b feat/ABC-1-stale ${base}`, cwd);
+  writeFileSync(join(cwd, "app-a", "file.txt"), "a1");
+  runGit("add .", cwd);
+  runGit('commit -m "rework app-a internals"', cwd);
+
+  runGit("checkout main", cwd);
+  writeFileSync(join(cwd, "app-b", "file.txt"), "b0");
+  runGit("add .", cwd);
+  runGit('commit -m "add app-b on main"', cwd);
+
+  runGit('merge --no-ff feat/ABC-1-stale -m "Merge pull request #1 from owner/feat/ABC-1-stale"', cwd);
+  const staleMerge = runGit("rev-parse HEAD", cwd);
+  runGit("branch -D feat/ABC-1-stale", cwd);
+
+  runGit(`checkout -b feat/XYZ-2-impl ${staleMerge}`, cwd);
+  writeFileSync(join(cwd, "app-b", "file.txt"), "b1");
+  runGit("add .", cwd);
+  runGit('commit -m "implement the thing"', cwd);
+
+  runGit("checkout main", cwd);
+  runGit('merge --no-ff feat/XYZ-2-impl -m "Merge pull request #2 from owner/feat/XYZ-2-impl"', cwd);
+  const subjectMerge = runGit("rev-parse HEAD", cwd);
+  runGit("branch -D feat/XYZ-2-impl", cwd);
+
+  return { cwd, commits: { base, staleMerge, subjectMerge } };
 }
 
 describe("getCommitContextsBetweenShas", () => {
@@ -1044,8 +1099,9 @@ describe("merge commit handling", () => {
       const shas = new Set(result.map((c) => c.sha));
       expect(shas.has(multiRepo.commits.merge100)).toBe(true);
       expect(shas.has(multiRepo.commits.merge200)).toBe(true);
-      // merge300 only touched infra/ — kept by the merges-only scan, then dropped
-      // by commitTouchesPaths so LIN-300 doesn't leak into a frontend release.
+      // merge300 only touched infra/, so under the frontend/backend pathspec it
+      // is TREESAME to its parents and `--full-history` drops it natively —
+      // LIN-300 never reaches a frontend release.
       expect(shas.has(multiRepo.commits.merge300)).toBe(false);
       expect(shas.has(multiRepo.commits.headMerge)).toBe(true);
 
@@ -1113,6 +1169,63 @@ describe("merge commit handling", () => {
       );
       // LIN-300 is mobile-only — outside the path filter — must not leak.
       expect(branchNames).not.toContain("feature/LIN-300-mobile");
+    });
+  });
+
+  describe("getCommitContextsBetweenShas with stale-branch merges under a path filter", () => {
+    let repo: TempRepoStaleMerge;
+
+    beforeAll(() => {
+      repo = createTempRepoStaleMerge();
+    });
+
+    afterAll(() => {
+      rmSync(repo.cwd, { recursive: true, force: true });
+    });
+
+    it("drops a stale-branch merge that delivered no change to the filtered paths", () => {
+      // feat/ABC-1-stale edited app-a/ only but merged after app-b/ landed, so
+      // `--full-history` keeps its merge under the app-b pathspec. The merge
+      // delivered nothing to app-b/, so its subject key must not be attributed.
+      const result = getCommitContextsBetweenShas(repo.commits.base, repo.commits.subjectMerge, {
+        includePaths: ["app-b/**"],
+        cwd: repo.cwd,
+      });
+
+      const shas = new Set(result.map((c) => c.sha));
+      expect(shas.has(repo.commits.staleMerge)).toBe(false);
+
+      const branchNames = result.map((c) => c.branchName).filter((b): b is string => !!b);
+      expect(branchNames).not.toContain("feat/ABC-1-stale");
+    });
+
+    it("retains a merge whose key lives only on the subject when it delivered the filtered paths (#62)", () => {
+      // feat/XYZ-2-impl genuinely edited app-b/ and carries its key only on the
+      // merge subject — dropping the merge would lose the key, the #62 bug.
+      const result = getCommitContextsBetweenShas(repo.commits.base, repo.commits.subjectMerge, {
+        includePaths: ["app-b/**"],
+        cwd: repo.cwd,
+      });
+
+      const shas = new Set(result.map((c) => c.sha));
+      expect(shas.has(repo.commits.subjectMerge)).toBe(true);
+
+      const branchNames = result.map((c) => c.branchName).filter((b): b is string => !!b);
+      expect(branchNames).toContain("feat/XYZ-2-impl");
+    });
+
+    it("still attributes a stale merge to the surface it actually touched", () => {
+      // The same stale merge DID deliver app-a/ changes, so under an app-a filter
+      // its subject key is correctly retained — the fix discards leaks, not work.
+      // And the app-b-only merge must not leak into the app-a surface.
+      const result = getCommitContextsBetweenShas(repo.commits.base, repo.commits.subjectMerge, {
+        includePaths: ["app-a/**"],
+        cwd: repo.cwd,
+      });
+
+      const branchNames = result.map((c) => c.branchName).filter((b): b is string => !!b);
+      expect(branchNames).toContain("feat/ABC-1-stale");
+      expect(branchNames).not.toContain("feat/XYZ-2-impl");
     });
   });
 });

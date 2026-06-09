@@ -68,6 +68,7 @@ export type CommitContext = {
   sha: string;
   branchName?: string | null;
   message?: string | null;
+  parents?: string[];
 };
 
 export type GitInfo = {

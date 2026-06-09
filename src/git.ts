@@ -332,13 +332,19 @@ export function extractBranchNameFromMergeMessage(message: string | null | undef
  * Prefers branch name from merge message over decorations for issue tracking.
  */
 function parseCommitChunk(chunk: string): CommitContext {
-  const [sha, rawMessage, rawDecorations] = chunk.split("\x1f");
+  const [sha, rawMessage, rawDecorations, rawParents] = chunk.split("\x1f");
   // Collapse runs of horizontal whitespace, but keep newlines so downstream
   // extractors can tell the title from the body and skip nested commit blocks.
   const message = (rawMessage ?? "").trim().replace(/[ \t]+/g, " ");
   const branchName = extractBranchNameFromMergeMessage(message) ?? extractBranchName(rawDecorations);
+  // Drop grafted/shallow-boundary parents so a shallow clone doesn't misreport a
+  // commit's merge-ness — same guard as getCommitParents.
+  const parents = (rawParents ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter((p) => /^[0-9a-f]{40}$/i.test(p));
 
-  return { sha: sha.trim(), branchName, message };
+  return { sha: sha.trim(), branchName, message, parents };
 }
 
 /**
@@ -383,7 +389,7 @@ export function ensureCommitAvailable(sha: string, cwd: string = process.cwd()):
 }
 
 function runLog(rangeArgs: string, cwd: string): CommitContext[] {
-  const output = execSync(`git log --format=%H%x1f%B%x1f%D%x1e ${rangeArgs}`, {
+  const output = execSync(`git log --format=%H%x1f%B%x1f%D%x1f%P%x1e ${rangeArgs}`, {
     cwd,
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf8",
@@ -395,13 +401,52 @@ function runLog(rangeArgs: string, cwd: string): CommitContext[] {
 }
 
 /**
+ * Whether merge `commit` delivered net changes to the filtered paths, compared to
+ * its first parent (the branch it was merged into). Non-merges pass through.
+ *
+ * Without this, `--full-history` retains a stale branch's merge for paths it never
+ * touched — they differ across the merge only because the target branch advanced
+ * while the branch was open — leaking the issue key on the merge subject. The
+ * first-parent diff is empty for those and non-empty when the merge really
+ * delivered the paths, so merge-subject-only keys are still kept (#62). On an
+ * unexpected diff failure, keep the merge rather than drop real work.
+ */
+function mergeDeliversToPaths(commit: CommitContext, pathspec: string, cwd: string): boolean {
+  const parents = commit.parents ?? [];
+  if (parents.length <= 1) {
+    return true;
+  }
+  try {
+    execSync(`git diff --quiet ${parents[0]} ${commit.sha} ${pathspec}`, {
+      cwd,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    return false;
+  } catch (e) {
+    const status = (e as { status?: number }).status;
+    if (status === 1) {
+      return true;
+    }
+    warn(
+      `Could not diff merge ${commit.sha.slice(0, 7)} against its first parent; keeping it under the path filter. ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    );
+    return true;
+  }
+}
+
+/**
  * Returns commits between two SHAs, optionally filtered by file paths.
  *
  * `--full-history` (only when `includePaths` is set): a non-evil merge's
  * tree equals one of its parents' trees, so under a pathspec it's TREESAME
  * and git's default simplification drops it. That's true of every provider's
  * merge commit (GitHub, GitLab MR, Bitbucket PR, plain `git merge --no-ff`)
- * and would lose the issue keys encoded in their feature-branch names.
+ * and would lose the issue keys encoded in their feature-branch names. Merges
+ * it keeps are then passed through `mergeDeliversToPaths`, which drops a
+ * stale-branch merge that delivered no net change to the filtered paths so its
+ * subject key isn't attributed to a surface it never touched.
  *
  * `--no-walk` (only when `fromSha === toSha`): without it, `git log -1 <sha>
  * -- <paths>` walks back from `<sha>` to the first ancestor matching the
@@ -432,14 +477,16 @@ export function getCommitContextsBetweenShas(
   }
 
   const inspectingSingleCommit = fromSha === toSha && inspectSingleCommit;
+  const pathspec = buildPathspecArgs(includePaths);
   const args = [
     includePaths?.length ? "--full-history" : "",
     inspectingSingleCommit ? `--no-walk ${toSha}` : `${fromSha}..${toSha}`,
-    buildPathspecArgs(includePaths),
+    pathspec,
   ]
     .filter(Boolean)
     .join(" ");
-  const commits = runLog(args, cwd);
+  const logged = runLog(args, cwd);
+  const commits = pathspec ? logged.filter((commit) => mergeDeliversToPaths(commit, pathspec, cwd)) : logged;
 
   if (commits.length === 0) {
     if (inspectingSingleCommit) {
