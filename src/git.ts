@@ -337,8 +337,9 @@ function parseCommitChunk(chunk: string): CommitContext {
   // extractors can tell the title from the body and skip nested commit blocks.
   const message = (rawMessage ?? "").trim().replace(/[ \t]+/g, " ");
   const branchName = extractBranchNameFromMergeMessage(message) ?? extractBranchName(rawDecorations);
-  // Drop grafted/shallow-boundary parents so a shallow clone doesn't misreport a
-  // commit's merge-ness — same guard as getCommitParents.
+  // %P is the parent SHAs, space-separated and empty for a root commit. Keep only
+  // full 40-char hashes so a root commit yields [] rather than [""], letting
+  // parents.length reliably tell a merge (2+) from a normal commit (1).
   const parents = (rawParents ?? "")
     .trim()
     .split(/\s+/)
@@ -408,8 +409,9 @@ function runLog(rangeArgs: string, cwd: string): CommitContext[] {
  * touched — they differ across the merge only because the target branch advanced
  * while the branch was open — leaking the issue key on the merge subject. The
  * first-parent diff is empty for those and non-empty when the merge really
- * delivered the paths, so merge-subject-only keys are still kept (#62). On an
- * unexpected diff failure, keep the merge rather than drop real work.
+ * delivered the paths, so a merge whose issue key lives only on its subject is
+ * still kept when it actually touched the paths. On an unexpected diff failure,
+ * keep the merge rather than drop real work.
  */
 function mergeDeliversToPaths(commit: CommitContext, pathspec: string, cwd: string): boolean {
   const parents = commit.parents ?? [];

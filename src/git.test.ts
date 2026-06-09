@@ -742,13 +742,13 @@ function createTempRepoReleaseBranch(): TempRepoReleaseBranch {
  * Two PR merges into main, each carrying its issue key only in the branch name
  * (no content commit carries a key):
  *  - feat/ABC-1-stale is rooted at `base`, edits app-a/ only, and is merged
- *    AFTER app-b/ appears on main — a stale branch never rebased. Its merge is
- *    not TREESAME to its first parent for app-b/ (which advanced on main while
- *    the branch was open), so `--full-history` keeps it under an app-b pathspec
- *    even though it delivered nothing to app-b/.
+ *    AFTER app-b/ appears on main — a stale branch never rebased. The merge
+ *    differs from its first parent for app-b/ only because app-b/ advanced on
+ *    main while the branch was open, so `--full-history` keeps it under an app-b
+ *    pathspec even though the branch delivered nothing to app-b/.
  *  - feat/XYZ-2-impl is rooted at the stale merge and genuinely edits app-b/.
  *    Its key lives only on the merge subject, so dropping the merge would lose
- *    it — the exact case #62 fixed.
+ *    the key entirely even though the merge did deliver app-b/ changes.
  */
 function createTempRepoStaleMerge(): TempRepoStaleMerge {
   const { cwd, base } = initTempRepo({
@@ -1100,8 +1100,8 @@ describe("merge commit handling", () => {
       expect(shas.has(multiRepo.commits.merge100)).toBe(true);
       expect(shas.has(multiRepo.commits.merge200)).toBe(true);
       // merge300 only touched infra/, so under the frontend/backend pathspec it
-      // is TREESAME to its parents and `--full-history` drops it natively —
-      // LIN-300 never reaches a frontend release.
+      // changed nothing relative to its parents and `--full-history` drops it
+      // natively — LIN-300 never reaches a frontend release.
       expect(shas.has(multiRepo.commits.merge300)).toBe(false);
       expect(shas.has(multiRepo.commits.headMerge)).toBe(true);
 
@@ -1199,9 +1199,9 @@ describe("merge commit handling", () => {
       expect(branchNames).not.toContain("feat/ABC-1-stale");
     });
 
-    it("retains a merge whose key lives only on the subject when it delivered the filtered paths (#62)", () => {
+    it("retains a merge whose key lives only on the subject when it delivered the filtered paths", () => {
       // feat/XYZ-2-impl genuinely edited app-b/ and carries its key only on the
-      // merge subject — dropping the merge would lose the key, the #62 bug.
+      // merge subject, so dropping the merge would lose the key entirely.
       const result = getCommitContextsBetweenShas(repo.commits.base, repo.commits.subjectMerge, {
         includePaths: ["app-b/**"],
         cwd: repo.cwd,
