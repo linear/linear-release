@@ -502,6 +502,24 @@ type TempRepoStaleMerge = {
   };
 };
 
+type TempRepoStaleBranchDecoration = {
+  cwd: string;
+  commits: {
+    base: string;
+    downMerge: string; // Interior merge commit a stale branch was cut from; subject is not a parseable merge message
+    tip: string;
+  };
+};
+
+type TempRepoFastForwardFeature = {
+  cwd: string;
+  commits: {
+    base: string;
+    feature: string; // Fast-forwarded regular commit whose issue key lives only in the branch name
+    tip: string;
+  };
+};
+
 function runGit(command: string, cwd: string): string {
   return execSync(`git ${command}`, {
     cwd,
@@ -782,6 +800,68 @@ function createTempRepoStaleMerge(): TempRepoStaleMerge {
   runGit("branch -D feat/XYZ-2-impl", cwd);
 
   return { cwd, commits: { base, staleMerge, subjectMerge } };
+}
+
+/**
+ * A stale branch cut from an interior down-merge commit and never committed onto,
+ * so its ref only decorates that merge. The merge subject is not a parseable merge
+ * message, leaving the decoration as the sole — wrong — branch-name source.
+ */
+function createTempRepoStaleBranchDecoration(): TempRepoStaleBranchDecoration {
+  const { cwd, base } = initTempRepo({
+    prefix: "linear-release-stale-decoration-",
+    dirs: ["src"],
+    seedFile: { path: "src/a.txt", content: "a" },
+  });
+
+  runGit(`checkout -b trunk ${base}`, cwd);
+  writeFileSync(join(cwd, "src", "b.txt"), "b");
+  runGit("add .", cwd);
+  runGit('commit -m "trunk work"', cwd);
+
+  runGit("checkout main", cwd);
+  writeFileSync(join(cwd, "src", "c.txt"), "c");
+  runGit("add .", cwd);
+  runGit('commit -m "release work"', cwd);
+  runGit('merge --no-ff trunk -m "Down merge trunk into release (#501)"', cwd);
+  const downMerge = runGit("rev-parse HEAD", cwd);
+
+  runGit(`branch ZED-7 ${downMerge}`, cwd);
+
+  writeFileSync(join(cwd, "src", "d.txt"), "d");
+  runGit("add .", cwd);
+  runGit('commit -m "[ARC-3]: fix worker lookup for restricted roles (#502)"', cwd);
+  const tip = runGit("rev-parse HEAD", cwd);
+
+  return { cwd, commits: { base, downMerge, tip } };
+}
+
+/**
+ * A GitLab fast-forward merge: the feature branch's commit lands verbatim on main
+ * with the issue key only in the branch name, and a later commit leaves it
+ * interior. The kept branch ref is the sole source of the key — it must survive.
+ */
+function createTempRepoFastForwardFeature(): TempRepoFastForwardFeature {
+  const { cwd, base } = initTempRepo({
+    prefix: "linear-release-ff-feature-",
+    dirs: ["src"],
+    seedFile: { path: "src/a.txt", content: "a" },
+  });
+
+  runGit(`checkout -b user/REL-9-feature ${base}`, cwd);
+  writeFileSync(join(cwd, "src", "b.txt"), "b");
+  runGit("add .", cwd);
+  runGit('commit -m "Add feature"', cwd);
+  const feature = runGit("rev-parse HEAD", cwd);
+
+  runGit("checkout main", cwd);
+  runGit("merge --ff-only user/REL-9-feature", cwd);
+  writeFileSync(join(cwd, "src", "c.txt"), "c");
+  runGit("add .", cwd);
+  runGit('commit -m "chore: follow-up"', cwd);
+  const tip = runGit("rev-parse HEAD", cwd);
+
+  return { cwd, commits: { base, feature, tip } };
 }
 
 describe("getCommitContextsBetweenShas", () => {
@@ -1226,6 +1306,38 @@ describe("merge commit handling", () => {
       const branchNames = result.map((c) => c.branchName).filter((b): b is string => !!b);
       expect(branchNames).toContain("feat/ABC-1-stale");
       expect(branchNames).not.toContain("feat/XYZ-2-impl");
+    });
+  });
+
+  describe("getCommitContextsBetweenShas with branch refs decorating interior commits", () => {
+    let stale: TempRepoStaleBranchDecoration;
+    let ff: TempRepoFastForwardFeature;
+
+    beforeAll(() => {
+      stale = createTempRepoStaleBranchDecoration();
+      ff = createTempRepoFastForwardFeature();
+    });
+
+    afterAll(() => {
+      rmSync(stale.cwd, { recursive: true, force: true });
+      rmSync(ff.cwd, { recursive: true, force: true });
+    });
+
+    it("ignores a stale ref decorating an interior merge commit", () => {
+      const result = getCommitContextsBetweenShas(stale.commits.base, stale.commits.tip, { cwd: stale.cwd });
+
+      const interior = result.find((c) => c.sha === stale.commits.downMerge);
+      expect(interior).toBeDefined();
+      expect(interior?.branchName).toBeNull();
+    });
+
+    it("keeps a fast-forwarded feature branch decorating an interior regular commit", () => {
+      // The key lives only in the branch name (GitLab fast-forward / direct push),
+      // so dropping interior decorations here would silently lose the issue.
+      const result = getCommitContextsBetweenShas(ff.commits.base, ff.commits.tip, { cwd: ff.cwd });
+
+      const interior = result.find((c) => c.sha === ff.commits.feature);
+      expect(interior?.branchName).toBe("user/REL-9-feature");
     });
   });
 });

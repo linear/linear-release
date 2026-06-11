@@ -330,13 +330,19 @@ export function extractBranchNameFromMergeMessage(message: string | null | undef
 /**
  * Parses a commit chunk (from git log --format=%H%x1f%B%x1f%D) into a CommitContext.
  * Prefers branch name from merge message over decorations for issue tracking.
+ *
+ * A ref decoration is only read on a regular commit. A merge commit is an
+ * integration node whose real content arrives via its parents; a ref pointing at
+ * one is the mainline or a branch merely cut from it and never committed onto
+ * (whose key is not this commit's work), so a merge takes its branch name solely
+ * from a parseable merge message. A regular commit may fall back to decorations —
+ * the GitLab fast-forward / direct-push case where the key lives only in the ref.
  */
 function parseCommitChunk(chunk: string): CommitContext {
   const [sha, rawMessage, rawDecorations, rawParents] = chunk.split("\x1f");
   // Collapse runs of horizontal whitespace, but keep newlines so downstream
   // extractors can tell the title from the body and skip nested commit blocks.
   const message = (rawMessage ?? "").trim().replace(/[ \t]+/g, " ");
-  const branchName = extractBranchNameFromMergeMessage(message) ?? extractBranchName(rawDecorations);
   // %P is the parent SHAs, space-separated and empty for a root commit. Keep only
   // full 40-char hashes so a root commit yields [] rather than [""], letting
   // parents.length reliably tell a merge (2+) from a normal commit (1).
@@ -344,6 +350,8 @@ function parseCommitChunk(chunk: string): CommitContext {
     .trim()
     .split(/\s+/)
     .filter((p) => /^[0-9a-f]{40}$/i.test(p));
+  const isMerge = parents.length >= 2;
+  const branchName = extractBranchNameFromMergeMessage(message) ?? (isMerge ? null : extractBranchName(rawDecorations));
 
   return { sha: sha.trim(), branchName, message, parents };
 }
