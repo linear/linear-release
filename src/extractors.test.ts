@@ -810,6 +810,18 @@ describe("extractPullRequestNumbersForCommit", () => {
     expect(result).toEqual([]);
   });
 
+  // A squash revert-of-revert re-applies the change, so its PR is attributed like a normal
+  // merge; a plain (or triple) revert removes it and is skipped. Keyed on revert depth parity,
+  // since squash messages (`Revert "Revert "…"" (#N)`) carry the nesting in the title, not a branch.
+  it.each([
+    ['Revert "Title" (#79504)', [], "plain squash revert (odd depth)"],
+    ['Revert "Revert "Title"" (#79620)', [79620], "squash revert-of-revert (even depth)"],
+    ['Revert "Revert "Revert "Title""" (#5)', [], "triple squash revert (odd depth)"],
+  ])("message %j should yield %j (%s)", (message, expected) => {
+    const result = extractPullRequestNumbersForCommit({ sha: "abc", message });
+    expect(result).toEqual(expected);
+  });
+
   // Numbers above the GraphQL Int (32-bit) bound cannot be GitHub PR numbers
   // and must be filtered so they don't poison the release sync mutation.
   it.each([

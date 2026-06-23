@@ -303,9 +303,10 @@ export function extractPullRequestNumbersForCommit(commit: CommitContext): numbe
 
   const rawMessage = commit.message ?? "";
 
-  // Reverts reference the original PR, not a new one.
-  if (/^Revert "/i.test(rawMessage)) {
-    verbose(`Skipping revert commit ${commit.sha} with message: "${rawMessage}"`);
+  // Odd depth = a net revert; its `(#N)` is the revert's own PR, undoing prior work, so skip it.
+  // Even depth (revert-of-revert) re-applies the change and must attribute its PR like a normal merge.
+  if (leadingRevertDepth(rawMessage) % 2 === 1) {
+    verbose(`Skipping odd-depth revert commit ${commit.sha} with message: "${rawMessage}"`);
     return [];
   }
   if (getRevertBranchDepth(commit.branchName) % 2 === 1) {
@@ -451,6 +452,21 @@ function parseRevertMessage(message: string): {
 export function getRevertMessageDepth(message: string | null | undefined): number {
   if (!message) return 0;
   return parseRevertMessage(message).depth;
+}
+
+/**
+ * Count leading `Revert "` wrappers. Unlike {@link getRevertMessageDepth} this does not
+ * require balanced quotes on the subject line, so a revert whose quoted title spans
+ * multiple lines (e.g. reverting a GitLab merge commit) still counts as depth 1.
+ */
+function leadingRevertDepth(message: string): number {
+  let text = message;
+  let depth = 0;
+  while (/^Revert "/i.test(text)) {
+    depth++;
+    text = text.replace(/^Revert "/i, "");
+  }
+  return depth;
 }
 
 /** Extract identifiers being reverted. Returns [] if not an odd-depth revert. */
