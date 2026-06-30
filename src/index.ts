@@ -65,6 +65,7 @@ Options:
   --release-notes <content>  Set the release notes covering this release (last-wins)
   --release-notes-file <path> Set release notes from a file ("-" for stdin; last-wins)
   --base-ref=<ref>           Override sync scan base (exclusive; scans <ref>..HEAD)
+  --released-at=<datetime>   Set the release date as an ISO-8601 string (e.g. 2026-07-04T18:00:00Z)
   --timeout=<seconds>        Abort if the operation exceeds this duration (default: 60)
   --json                     Output result as JSON (logs emitted as JSON Lines on stderr)
   --dry-run                  Scan and call read-only Linear APIs, but skip create/update mutations
@@ -119,6 +120,7 @@ const {
   links,
   documents: documentSpecs,
   releaseNotes: releaseNotesSpec,
+  releasedAt,
   jsonOutput,
   dryRun,
   timeoutSeconds,
@@ -369,8 +371,9 @@ async function syncCommand(): Promise<{
   if (dryRun) {
     const targetName = releaseName ?? "(server-assigned)";
     const versionPart = releaseVersion ? `version: ${releaseVersion}` : "no version set";
+    const datePart = releasedAt ? `, released-at: ${releasedAt.toISOString()}` : "";
     info(
-      `[dry-run] Would sync release ${targetName} (${versionPart}): ${scanned}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
+      `[dry-run] Would sync release ${targetName} (${versionPart}): ${scanned}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}${datePart}`,
     );
     return null;
   }
@@ -384,6 +387,7 @@ async function syncCommand(): Promise<{
     links,
     documents,
     releaseNotes,
+    releasedAt,
   );
   info(
     `Synced to release ${release.name} (${formatVersion(release)}): ${scanned}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
@@ -413,8 +417,9 @@ async function completeCommand(): Promise<{
   if (dryRun) {
     const targetName = releaseName ?? "(current release)";
     const versionPart = releaseVersion ? `version: ${releaseVersion}` : "no version set";
+    const datePart = releasedAt ? `, released-at: ${releasedAt.toISOString()}` : "";
     info(
-      `[dry-run] Would complete release ${targetName} (${versionPart})${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
+      `[dry-run] Would complete release ${targetName} (${versionPart})${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}${datePart}`,
     );
     return null;
   }
@@ -426,6 +431,7 @@ async function completeCommand(): Promise<{
     links,
     documents,
     releaseNotes,
+    releasedAt,
   });
   if (result.success) {
     info(
@@ -459,8 +465,9 @@ async function updateCommand(): Promise<{
   if (dryRun) {
     const targetName = releaseName ?? "(current release)";
     const versionPart = releaseVersion ? `version: ${releaseVersion}` : "no version set";
+    const datePart = releasedAt ? `, released-at: ${releasedAt.toISOString()}` : "";
     info(
-      `[dry-run] Would update release ${targetName} (${versionPart}) to stage ${stageName}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
+      `[dry-run] Would update release ${targetName} (${versionPart}) to stage ${stageName}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}${datePart}`,
     );
     return null;
   }
@@ -474,6 +481,7 @@ async function updateCommand(): Promise<{
       links,
       documents,
       releaseNotes,
+      releasedAt,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -594,6 +602,7 @@ async function syncRelease(
   releaseLinks: ReleaseLink[],
   releaseDocuments: ReleaseDocument[],
   releaseNotesValue: ReleaseNotes | undefined,
+  releasedAt?: Date,
 ): Promise<Release> {
   const currentSha = await getCurrentGitInfo().commit;
   if (!currentSha) {
@@ -632,6 +641,7 @@ async function syncRelease(
         links: releaseLinks.length > 0 ? releaseLinks : undefined,
         documents: releaseDocuments.length > 0 ? releaseDocuments : undefined,
         releaseNotes: releaseNotesValue,
+        releasedAt: releasedAt?.toISOString(),
         pullRequestReferences: prNumbers.map((number) => ({
           repositoryOwner: owner,
           repositoryName: name,
@@ -664,6 +674,7 @@ async function completeRelease(options: {
   links: ReleaseLink[];
   documents: ReleaseDocument[];
   releaseNotes?: ReleaseNotes;
+  releasedAt?: Date;
 }): Promise<{
   success: boolean;
   release: { id: string; name: string; version?: string; url?: string } | null;
@@ -675,6 +686,7 @@ async function completeRelease(options: {
     links: releaseLinks,
     documents: releaseDocuments,
     releaseNotes: notesValue,
+    releasedAt,
   } = options;
 
   const response = await apiRequest<AccessKeyCompleteReleaseResponse>(
@@ -699,6 +711,7 @@ async function completeRelease(options: {
         links: releaseLinks.length > 0 ? releaseLinks : undefined,
         documents: releaseDocuments.length > 0 ? releaseDocuments : undefined,
         releaseNotes: notesValue,
+        releasedAt: releasedAt?.toISOString(),
       },
     },
   );
@@ -713,6 +726,7 @@ async function updateReleaseByPipeline(options: {
   links: ReleaseLink[];
   documents: ReleaseDocument[];
   releaseNotes?: ReleaseNotes;
+  releasedAt?: Date;
 }): Promise<{
   success: boolean;
   release: {
@@ -723,7 +737,15 @@ async function updateReleaseByPipeline(options: {
     stageName: string;
   } | null;
 }> {
-  const { stage, version, name, links: releaseLinks, documents: releaseDocuments, releaseNotes: notesValue } = options;
+  const {
+    stage,
+    version,
+    name,
+    links: releaseLinks,
+    documents: releaseDocuments,
+    releaseNotes: notesValue,
+    releasedAt,
+  } = options;
   const response = await apiRequest<AccessKeyUpdateByPipelineResponse>(
     `
     mutation releaseUpdateByPipelineByAccessKey($input: ReleaseUpdateByPipelineInputBase!) {
@@ -749,6 +771,7 @@ async function updateReleaseByPipeline(options: {
         links: releaseLinks.length > 0 ? releaseLinks : undefined,
         documents: releaseDocuments.length > 0 ? releaseDocuments : undefined,
         releaseNotes: notesValue,
+        releasedAt: releasedAt?.toISOString(),
       },
     },
   );
