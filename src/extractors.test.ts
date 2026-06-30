@@ -907,3 +907,68 @@ describe("extractPullRequestNumbersForCommit — GitLab merge request trailer", 
     expect(result).toEqual([]);
   });
 });
+
+describe("extractLinearIssueIdentifiersForCommit with --issue-pattern", () => {
+  const conventionalPattern = /\[(\w{1,7}-\d+)\]/;
+
+  it("extracts identifier from Conventional Commits bracket notation", () => {
+    const commit: CommitContext = {
+      sha: "abc123",
+      branchName: null,
+      message: "feat(routing)[ENG-123]: add stop reordering",
+    };
+    const result = extractLinearIssueIdentifiersForCommit(commit, { issuePattern: conventionalPattern });
+    expect(ids(result)).toContain("ENG-123");
+  });
+
+  it("extracts identifier when type has no scope", () => {
+    const commit: CommitContext = {
+      sha: "abc123",
+      branchName: null,
+      message: "fix[ENG-456]: handle empty payload",
+    };
+    const result = extractLinearIssueIdentifiersForCommit(commit, { issuePattern: conventionalPattern });
+    expect(ids(result)).toContain("ENG-456");
+  });
+
+  it("extracts multiple identifiers from the same subject", () => {
+    const commit: CommitContext = {
+      sha: "abc123",
+      branchName: null,
+      message: "chore[ENG-7][ENG-8]: bump deps",
+    };
+    const result = extractLinearIssueIdentifiersForCommit(commit, { issuePattern: conventionalPattern });
+    expect(ids(result)).toEqual(expect.arrayContaining(["ENG-7", "ENG-8"]));
+  });
+
+  it("does not extract when no group 1 matches a valid identifier", () => {
+    const commit: CommitContext = {
+      sha: "abc123",
+      branchName: null,
+      message: "chore(deps)[notanid]: bump",
+    };
+    const result = extractLinearIssueIdentifiersForCommit(commit, { issuePattern: conventionalPattern });
+    expect(ids(result)).toEqual([]);
+  });
+
+  it("still extracts identifiers from branch name regardless of issuePattern", () => {
+    const commit: CommitContext = {
+      sha: "abc123",
+      branchName: "feature/ENG-99-my-change",
+      message: "feat[ENG-100]: do something",
+    };
+    const result = extractLinearIssueIdentifiersForCommit(commit, { issuePattern: conventionalPattern });
+    expect(ids(result)).toEqual(expect.arrayContaining(["ENG-99", "ENG-100"]));
+  });
+
+  it("behaves identically to no pattern when issuePattern is null", () => {
+    const commit: CommitContext = {
+      sha: "abc123",
+      branchName: null,
+      message: "feat[ENG-123]: some change",
+    };
+    const withNull = extractLinearIssueIdentifiersForCommit(commit, { issuePattern: null });
+    const withUndefined = extractLinearIssueIdentifiersForCommit(commit);
+    expect(ids(withNull)).toEqual(ids(withUndefined));
+  });
+});

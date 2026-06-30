@@ -10,6 +10,7 @@ import { CommitContext, DebugSink, IssueReference, PullRequestSource } from "./t
 export type ScanOptions = {
   includePaths?: string[] | null;
   includeSubjects?: string | null;
+  issuePattern?: string | null;
 };
 
 /**
@@ -26,8 +27,9 @@ export function scanCommits(
   prNumbers: number[];
   debugSink: DebugSink;
 } {
-  const { includePaths = null, includeSubjects = null } = options;
+  const { includePaths = null, includeSubjects = null, issuePattern = null } = options;
   const subjectRegex = includeSubjects ? new RegExp(includeSubjects) : null;
+  const issuePatternRegex = issuePattern ? new RegExp(issuePattern, "i") : null;
   const lastAction = new Map<string, "added" | "reverted">();
   const addedRefs = new Map<string, IssueReference>();
   const revertedRefs = new Map<string, IssueReference>();
@@ -40,6 +42,7 @@ export function scanCommits(
     pullRequests: [],
     includePaths,
     includeSubjects,
+    issuePattern,
   };
 
   for (const commit of commits) {
@@ -68,7 +71,9 @@ export function scanCommits(
       verbose(`Detected reverted issue key ${identifier} from commit ${commit.sha}`);
     }
 
-    for (const { identifier, source } of extractLinearIssueIdentifiersForCommit(commit)) {
+    for (const { identifier, source } of extractLinearIssueIdentifiersForCommit(commit, {
+      issuePattern: issuePatternRegex,
+    })) {
       if (!debugSink.issues[identifier]) {
         debugSink.issues[identifier] = [];
       }

@@ -230,7 +230,29 @@ export type ExtractedIdentifier = {
   source: "branch_name" | "commit_message";
 };
 
-export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): ExtractedIdentifier[] {
+/**
+ * Apply a user-supplied regex to the commit subject and extract any Linear
+ * issue identifiers captured in group 1. Matches anywhere in the subject so
+ * teams that embed the identifier mid-subject (e.g. Conventional Commits with
+ * `feat(scope)[ENG-123]: …`) can supply a pattern like `\[(\w+-\d+)\]`.
+ */
+function matchCustomSubjectPattern(message: string, pattern: RegExp): IdentifierMatch[] {
+  const subject = getCommitSubject(message);
+  const results: IdentifierMatch[] = [];
+  const globalPattern = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
+  let match;
+  while ((match = globalPattern.exec(subject)) !== null) {
+    const captured = match[1];
+    if (!captured) continue;
+    results.push(...matchAllIdentifiers(captured));
+  }
+  return results;
+}
+
+export function extractLinearIssueIdentifiersForCommit(
+  commit: CommitContext,
+  options?: { issuePattern?: RegExp | null },
+): ExtractedIdentifier[] {
   if (!commit) {
     return [];
   }
@@ -267,7 +289,12 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): E
   const scanTarget = messageDepth % 2 === 1 ? afterTitle : (commit.message ?? "");
   const message = stripSquashBlock(scanTarget);
   if (message.length > 0) {
-    for (const match of [...matchCommonSubjectPatterns(message), ...matchMagicWordIdentifiers(message)]) {
+    const customMatches = options?.issuePattern ? matchCustomSubjectPattern(message, options.issuePattern) : [];
+    for (const match of [
+      ...matchCommonSubjectPatterns(message),
+      ...matchMagicWordIdentifiers(message),
+      ...customMatches,
+    ]) {
       if (!found.has(match.identifier)) {
         found.set(match.identifier, {
           identifier: match.identifier,

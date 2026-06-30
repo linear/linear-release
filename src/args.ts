@@ -27,6 +27,7 @@ export type ParsedCLIArgs = {
   baseRef?: string;
   includePaths: string[];
   includeSubjects: string | null;
+  issuePattern: string | null;
   links: ReleaseLink[];
   documents: ReleaseDocumentSpec[];
   releaseNotes?: ReleaseNoteSpec;
@@ -133,6 +134,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
       "base-ref": { type: "string" },
       "include-paths": { type: "string" },
       "include-subjects": { type: "string" },
+      "issue-pattern": { type: "string" },
       link: { type: "string", multiple: true },
       document: { type: "string", multiple: true },
       "document-file": { type: "string", multiple: true },
@@ -178,6 +180,18 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
     }
     includeSubjects = rawIncludeSubjects;
   }
+  let issuePattern: string | null = null;
+  const rawIssuePattern = values["issue-pattern"];
+  if (rawIssuePattern !== undefined && rawIssuePattern.length > 0) {
+    try {
+      new RegExp(rawIssuePattern);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(`Invalid --issue-pattern regex: ${detail}`);
+    }
+    issuePattern = rawIssuePattern;
+  }
+
   const command = positionals[0] || "sync";
   const links = (values.link ?? []).map(parseReleaseLink);
 
@@ -226,6 +240,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
           .filter((p) => p.length > 0)
       : [],
     includeSubjects,
+    issuePattern,
     links,
     documents,
     releaseNotes,
