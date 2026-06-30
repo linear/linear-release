@@ -30,6 +30,7 @@ export type ParsedCLIArgs = {
   links: ReleaseLink[];
   documents: ReleaseDocumentSpec[];
   releaseNotes?: ReleaseNoteSpec;
+  releasedAt?: Date;
   jsonOutput: boolean;
   dryRun: boolean;
   timeoutSeconds: number;
@@ -138,6 +139,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
       "document-file": { type: "string", multiple: true },
       "release-notes": { type: "string", multiple: true },
       "release-notes-file": { type: "string", multiple: true },
+      "released-at": { type: "string" },
       json: { type: "boolean", default: false },
       "dry-run": { type: "boolean", default: false },
       timeout: { type: "string" },
@@ -178,6 +180,17 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
     }
     includeSubjects = rawIncludeSubjects;
   }
+  let releasedAt: Date | undefined;
+  if (values["released-at"] !== undefined) {
+    const parsed = new Date(values["released-at"]);
+    if (isNaN(parsed.getTime())) {
+      throw new Error(
+        `Invalid --released-at value: "${values["released-at"]}". Expected an ISO-8601 date string (e.g. 2026-07-04T18:00:00Z).`,
+      );
+    }
+    releasedAt = parsed;
+  }
+
   const command = positionals[0] || "sync";
   const links = (values.link ?? []).map(parseReleaseLink);
 
@@ -229,6 +242,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
     links,
     documents,
     releaseNotes,
+    releasedAt,
     jsonOutput: values.json ?? false,
     dryRun: values["dry-run"] ?? false,
     timeoutSeconds,
