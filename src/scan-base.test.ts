@@ -2,14 +2,19 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { getCommitContextsBetweenShas, resolveCommitRef, verifyAncestorReachable } from "./git";
+import * as log from "./log";
 import {
   assertBaseRefIsAncestor,
+  BROAD_SCAN_COMMIT_THRESHOLD,
+  getBroadScanWarning,
+  getScanMetadata,
   type ScanBase,
   selectAutomaticScanBase,
   shouldCreateReleaseForScan,
 } from "./scan-base";
+import type { Release } from "./types";
 
 function runGit(args: string[], cwd: string): string {
   return execFileSync("git", args, {
@@ -87,6 +92,10 @@ describe("scan base selection", () => {
     rmSync(repo.cwd, { recursive: true, force: true });
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("resolves git refs to commit SHAs", () => {
     expect(resolveCommitRef("api-start", repo.cwd)).toBe(repo.commits.api1);
     expect(resolveCommitRef("main~1", repo.cwd)).toBe(repo.commits.web);
@@ -133,6 +142,117 @@ describe("scan base selection", () => {
   it("keeps normal automatic scans from creating releases with zero commits", () => {
     const scanBase = selectAutomaticScanBase([], repo.commits.head, deps, repo.cwd);
     expect(shouldCreateReleaseForScan(0, scanBase)).toBe(false);
+  });
+
+  it("builds scan metadata for each scan-base type", () => {
+    expect(getScanMetadata({ kind: "release", sha: repo.commits.api1 }, 5, 3)).toEqual({
+      scanBaseType: "release",
+      scanBaseCandidateCount: 5,
+      scannedCommitCount: 3,
+    });
+    expect(getScanMetadata({ kind: "first-sync", sha: repo.commits.api1, candidatesConsidered: 2 }, 5, 3)).toEqual({
+      scanBaseType: "first-sync",
+      scanBaseCandidateCount: 2,
+      scannedCommitCount: 3,
+    });
+    expect(getScanMetadata({ kind: "base-ref", sha: repo.commits.api1, ref: "api-start" }, 5, 3)).toEqual({
+      scanBaseType: "base-ref",
+      scanBaseCandidateCount: 5,
+      scannedCommitCount: 3,
+    });
+  });
+
+  it("warns when every SHA-bearing candidate is rejected", () => {
+    const warn = vi.spyOn(log, "warn");
+
+    selectAutomaticScanBase(
+      [
+        {
+          id: "stale-release",
+          name: "stale release",
+          createdAt: new Date().toISOString(),
+          commitSha: repo.commits.stale,
+        },
+      ],
+      repo.commits.head,
+      deps,
+      repo.cwd,
+    );
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("use one pipeline per repository"));
+  });
+
+  it("warns when candidates do not carry commit SHAs", () => {
+    const warn = vi.spyOn(log, "warn");
+
+    selectAutomaticScanBase(
+      [
+        {
+          id: "manual-release",
+          name: "manual release",
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      repo.commits.head,
+      deps,
+      repo.cwd,
+    );
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("None of the last 1 releases carry a commit SHA"));
+  });
+
+  it("warns when GraphQL candidates have null commit SHAs", () => {
+    const warn = vi.spyOn(log, "warn");
+    const manualRelease = {
+      id: "manual-release",
+      name: "manual release",
+      createdAt: new Date().toISOString(),
+      commitSha: null,
+    } as unknown as Release;
+
+    selectAutomaticScanBase([manualRelease], repo.commits.head, deps, repo.cwd);
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("they were likely created manually"));
+  });
+
+  it("does not warn on a genuine first sync", () => {
+    const warn = vi.spyOn(log, "warn");
+
+    selectAutomaticScanBase([], repo.commits.head, deps, repo.cwd);
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("does not warn when it finds a reachable release anchor", () => {
+    const warn = vi.spyOn(log, "warn");
+
+    selectAutomaticScanBase(
+      [
+        {
+          id: "reachable-release",
+          name: "reachable release",
+          createdAt: new Date().toISOString(),
+          commitSha: repo.commits.api1,
+        },
+      ],
+      repo.commits.head,
+      deps,
+      repo.cwd,
+    );
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("warns only when scans exceed the broad-scan threshold", () => {
+    const scanBase: ScanBase = { kind: "release", sha: repo.commits.api1 };
+    const baseRefScanBase: ScanBase = { kind: "base-ref", sha: repo.commits.api1, ref: "release-start" };
+
+    expect(getBroadScanWarning(BROAD_SCAN_COMMIT_THRESHOLD, scanBase)).toBeUndefined();
+    expect(getBroadScanWarning(BROAD_SCAN_COMMIT_THRESHOLD + 1, scanBase)).toContain("Scanning 101 commits");
+    expect(getBroadScanWarning(BROAD_SCAN_COMMIT_THRESHOLD + 1, baseRefScanBase)).toContain(
+      "linked to the target release. This range was explicitly requested.",
+    );
+    expect(getBroadScanWarning(BROAD_SCAN_COMMIT_THRESHOLD + 1, baseRefScanBase)).not.toContain("Pass --version");
   });
 
   it("fails clearly for refs that do not resolve to a commit", () => {

@@ -9,7 +9,14 @@ import {
   resolveCommitRef,
   verifyAncestorReachable,
 } from "./git";
-import { assertBaseRefIsAncestor, ScanBase, selectAutomaticScanBase, shouldCreateReleaseForScan } from "./scan-base";
+import {
+  assertBaseRefIsAncestor,
+  getBroadScanWarning,
+  getScanMetadata,
+  ScanBase,
+  selectAutomaticScanBase,
+  shouldCreateReleaseForScan,
+} from "./scan-base";
 import { scanCommits } from "./scan";
 import {
   Release,
@@ -305,6 +312,10 @@ async function syncCommand(): Promise<{
     includePaths: effectiveIncludePaths,
     inspectSingleCommit: scanBase.kind !== "base-ref",
   });
+  const broadScanWarning = getBroadScanWarning(commits.length, scanBase);
+  if (broadScanWarning) {
+    warn(broadScanWarning);
+  }
 
   if (inspectingOnlyCurrentCommit) {
     if (commits.length === 0) {
@@ -384,6 +395,7 @@ async function syncCommand(): Promise<{
     links,
     documents,
     releaseNotes,
+    getScanMetadata(scanBase, recentReleases.length, commits.length),
   );
   info(
     `Synced to release ${release.name} (${formatVersion(release)}): ${scanned}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
@@ -541,21 +553,6 @@ function getScanBase(candidates: Release[], currentSha: string): ScanBase {
 
   if (scanBase.candidatesConsidered === 0) {
     verbose("No recent releases found; assuming first sync");
-  } else {
-    // The candidate list came back non-empty but no entry is reachable from
-    // HEAD. This usually means orphaned/stale commitShas, but can also mean
-    // the actual previous release is older than the recent-releases page —
-    // in which case we'll silently under-cover. Surface it at warn level so
-    // it's visible in CI logs.
-    // Don't promise "current commit only" here — the actual fallback is
-    // resolveFirstSyncBoundary, which uses HEAD^1 when HEAD is a merge commit.
-    // The follow-up verbose lines below print the boundary that was chosen.
-    warn(
-      `No recent release is an ancestor of ${currentSha} (${scanBase.candidatesConsidered} ${pluralize(
-        scanBase.candidatesConsidered,
-        "candidate",
-      )} considered); falling back to the first-sync scan boundary`,
-    );
   }
   // For a merge HEAD the issue keys live on HEAD^2's branch, not on HEAD
   // itself, so HEAD-only would miss them. Non-merge HEAD carries its own key.
@@ -594,6 +591,7 @@ async function syncRelease(
   releaseLinks: ReleaseLink[],
   releaseDocuments: ReleaseDocument[],
   releaseNotesValue: ReleaseNotes | undefined,
+  scanMetadata: ReturnType<typeof getScanMetadata>,
 ): Promise<Release> {
   const currentSha = await getCurrentGitInfo().commit;
   if (!currentSha) {
@@ -646,6 +644,7 @@ async function syncRelease(
             }
           : undefined,
         debugSink,
+        ...scanMetadata,
       },
     },
   );
