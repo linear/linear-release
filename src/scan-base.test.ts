@@ -9,7 +9,6 @@ import {
   assertBaseRefIsAncestor,
   BROAD_SCAN_COMMIT_THRESHOLD,
   getBroadScanWarning,
-  getScanMetadata,
   type ScanBase,
   selectAutomaticScanBase,
   shouldCreateReleaseForScan,
@@ -78,6 +77,25 @@ function createGitFlowHotfixRepo() {
   return { cwd, commits: { previousRelease, forkPoint, head } };
 }
 
+function createMergeRepo() {
+  const cwd = mkdtempSync(join(tmpdir(), "linear-release-scan-base-merge-"));
+  runGit(["init", "-q", "-b", "main"], cwd);
+  runGit(["config", "user.email", "test@example.com"], cwd);
+  runGit(["config", "user.name", "Test User"], cwd);
+
+  const root = commit(cwd, "README.md", "root", "root");
+  runGit(["checkout", "-q", "-b", "stale", root], cwd);
+  const stale = commit(cwd, "stale.txt", "stale", "stale release");
+  runGit(["checkout", "-q", "-b", "feature", root], cwd);
+  commit(cwd, "feature.txt", "feature", "feature commit");
+  runGit(["checkout", "-q", "main"], cwd);
+  const firstParent = commit(cwd, "main.txt", "main", "main commit");
+  runGit(["merge", "-q", "--no-ff", "feature", "-m", "merge feature"], cwd);
+  const mergeCommit = runGit(["rev-parse", "HEAD"], cwd);
+
+  return { cwd, commits: { stale, firstParent, mergeCommit } };
+}
+
 describe("scan base selection", () => {
   let repo: ReturnType<typeof createMigrationRepo>;
   const deps = {
@@ -144,22 +162,53 @@ describe("scan base selection", () => {
     expect(shouldCreateReleaseForScan(0, scanBase)).toBe(false);
   });
 
-  it("builds scan metadata for each scan-base type", () => {
-    expect(getScanMetadata({ kind: "release", sha: repo.commits.api1 }, 5, 3)).toEqual({
-      scanBaseType: "release",
-      scanBaseCandidateCount: 5,
-      scannedCommitCount: 3,
-    });
-    expect(getScanMetadata({ kind: "first-sync", sha: repo.commits.api1, candidatesConsidered: 2 }, 5, 3)).toEqual({
-      scanBaseType: "first-sync",
-      scanBaseCandidateCount: 2,
-      scannedCommitCount: 3,
-    });
-    expect(getScanMetadata({ kind: "base-ref", sha: repo.commits.api1, ref: "api-start" }, 5, 3)).toEqual({
-      scanBaseType: "base-ref",
-      scanBaseCandidateCount: 5,
-      scannedCommitCount: 3,
-    });
+  it("scans only a merge commit when release candidates cannot be used", () => {
+    const mergeRepo = createMergeRepo();
+    const mergeDeps = {
+      verifyAncestorReachable: (sha: string, headSha: string) => verifyAncestorReachable(sha, headSha, mergeRepo.cwd),
+    };
+
+    try {
+      const scanBase = selectAutomaticScanBase(
+        [
+          {
+            id: "stale-release",
+            name: "stale release",
+            createdAt: new Date().toISOString(),
+            commitSha: mergeRepo.commits.stale,
+          },
+        ],
+        mergeRepo.commits.mergeCommit,
+        mergeDeps,
+        mergeRepo.cwd,
+      );
+
+      expect(scanBase).toEqual({
+        kind: "first-sync",
+        sha: mergeRepo.commits.mergeCommit,
+        candidatesConsidered: 1,
+      });
+      expect(scanBase.sha).not.toBe(mergeRepo.commits.firstParent);
+    } finally {
+      rmSync(mergeRepo.cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the first-sync boundary when there are no release candidates", () => {
+    const mergeRepo = createMergeRepo();
+    const mergeDeps = {
+      verifyAncestorReachable: (sha: string, headSha: string) => verifyAncestorReachable(sha, headSha, mergeRepo.cwd),
+    };
+
+    try {
+      expect(selectAutomaticScanBase([], mergeRepo.commits.mergeCommit, mergeDeps, mergeRepo.cwd)).toEqual({
+        kind: "first-sync",
+        sha: mergeRepo.commits.firstParent,
+        candidatesConsidered: 0,
+      });
+    } finally {
+      rmSync(mergeRepo.cwd, { recursive: true, force: true });
+    }
   });
 
   it("warns when every SHA-bearing candidate is rejected", () => {
@@ -179,7 +228,9 @@ describe("scan base selection", () => {
       repo.cwd,
     );
 
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("use one pipeline per repository"));
+    expect(warn).toHaveBeenCalledWith(
+      "None of the last 1 synced releases' commit SHAs exist in this repository's history. Syncing only the current commit until a scan base can be established. If this pipeline receives syncs from multiple repositories, use one pipeline per repository; otherwise pass --base-ref to pin the scan range.",
+    );
   });
 
   it("warns when candidates do not carry commit SHAs", () => {
@@ -198,7 +249,9 @@ describe("scan base selection", () => {
       repo.cwd,
     );
 
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("None of the last 1 releases carry a commit SHA"));
+    expect(warn).toHaveBeenCalledWith(
+      "None of the last 1 releases carry a commit SHA (they were likely created manually). Syncing only the current commit until a scan base can be established. If this pipeline receives syncs from multiple repositories, use one pipeline per repository; otherwise pass --base-ref to pin the scan range.",
+    );
   });
 
   it("warns when GraphQL candidates have null commit SHAs", () => {

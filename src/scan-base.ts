@@ -8,12 +8,6 @@ export type ScanBase =
   | { kind: "first-sync"; sha: string; candidatesConsidered: number }
   | { kind: "base-ref"; sha: string; ref: string };
 
-export type ScanMetadata = {
-  scanBaseType: ScanBase["kind"];
-  scanBaseCandidateCount: number;
-  scannedCommitCount: number;
-};
-
 export const BROAD_SCAN_COMMIT_THRESHOLD = 100;
 
 export function selectAutomaticScanBase(
@@ -30,12 +24,20 @@ export function selectAutomaticScanBase(
   const shaBearingCandidates = candidates.filter((candidate) => Boolean(candidate.commitSha)).length;
   if (shaBearingCandidates > 0) {
     warn(
-      `None of the last ${shaBearingCandidates} synced releases' commit SHAs exist in this repository's history. Falling back to a fresh scan — previously shipped issues may be re-linked. If this pipeline receives syncs from multiple repositories, use one pipeline per repository; otherwise pass --base-ref to pin the scan range.`,
+      `None of the last ${shaBearingCandidates} synced releases' commit SHAs exist in this repository's history. Syncing only the current commit until a scan base can be established. If this pipeline receives syncs from multiple repositories, use one pipeline per repository; otherwise pass --base-ref to pin the scan range.`,
     );
   } else if (candidates.length > 0) {
     warn(
-      `None of the last ${candidates.length} releases carry a commit SHA (they were likely created manually). Falling back to a fresh scan — previously shipped issues may be re-linked. If this pipeline receives syncs from multiple repositories, use one pipeline per repository; otherwise pass --base-ref to pin the scan range.`,
+      `None of the last ${candidates.length} releases carry a commit SHA (they were likely created manually). Syncing only the current commit until a scan base can be established. If this pipeline receives syncs from multiple repositories, use one pipeline per repository; otherwise pass --base-ref to pin the scan range.`,
     );
+  }
+
+  if (candidates.length > 0) {
+    return {
+      kind: "first-sync",
+      sha: currentSha,
+      candidatesConsidered: candidates.length,
+    };
   }
 
   return {
@@ -65,21 +67,6 @@ export function assertBaseRefIsAncestor(
 
 export function shouldCreateReleaseForScan(commitsLength: number, scanBase: ScanBase): boolean {
   return commitsLength > 0 || scanBase.kind === "base-ref";
-}
-
-/**
- * Builds scan metadata sent with a sync request.
- */
-export function getScanMetadata(
-  scanBase: ScanBase,
-  recentReleaseCount: number,
-  scannedCommitCount: number,
-): ScanMetadata {
-  return {
-    scanBaseType: scanBase.kind,
-    scanBaseCandidateCount: scanBase.kind === "first-sync" ? scanBase.candidatesConsidered : recentReleaseCount,
-    scannedCommitCount,
-  };
 }
 
 export function getBroadScanWarning(commitsLength: number, scanBase: ScanBase): string | undefined {

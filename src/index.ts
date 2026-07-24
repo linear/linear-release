@@ -12,7 +12,6 @@ import {
 import {
   assertBaseRefIsAncestor,
   getBroadScanWarning,
-  getScanMetadata,
   ScanBase,
   selectAutomaticScanBase,
   shouldCreateReleaseForScan,
@@ -395,7 +394,6 @@ async function syncCommand(): Promise<{
     links,
     documents,
     releaseNotes,
-    getScanMetadata(scanBase, recentReleases.length, commits.length),
   );
   info(
     `Synced to release ${release.name} (${formatVersion(release)}): ${scanned}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
@@ -591,7 +589,6 @@ async function syncRelease(
   releaseLinks: ReleaseLink[],
   releaseDocuments: ReleaseDocument[],
   releaseNotesValue: ReleaseNotes | undefined,
-  scanMetadata: ReturnType<typeof getScanMetadata>,
 ): Promise<Release> {
   const currentSha = await getCurrentGitInfo().commit;
   if (!currentSha) {
@@ -644,7 +641,6 @@ async function syncRelease(
             }
           : undefined,
         debugSink,
-        ...scanMetadata,
       },
     },
   );
