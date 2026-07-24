@@ -2,14 +2,18 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { getCommitContextsBetweenShas, resolveCommitRef, verifyAncestorReachable } from "./git";
+import * as log from "./log";
 import {
   assertBaseRefIsAncestor,
+  BROAD_SCAN_COMMIT_THRESHOLD,
+  getBroadScanWarning,
   type ScanBase,
   selectAutomaticScanBase,
   shouldCreateReleaseForScan,
 } from "./scan-base";
+import type { Release } from "./types";
 
 function runGit(args: string[], cwd: string): string {
   return execFileSync("git", args, {
@@ -73,6 +77,25 @@ function createGitFlowHotfixRepo() {
   return { cwd, commits: { previousRelease, forkPoint, head } };
 }
 
+function createMergeRepo() {
+  const cwd = mkdtempSync(join(tmpdir(), "linear-release-scan-base-merge-"));
+  runGit(["init", "-q", "-b", "main"], cwd);
+  runGit(["config", "user.email", "test@example.com"], cwd);
+  runGit(["config", "user.name", "Test User"], cwd);
+
+  const root = commit(cwd, "README.md", "root", "root");
+  runGit(["checkout", "-q", "-b", "stale", root], cwd);
+  const stale = commit(cwd, "stale.txt", "stale", "stale release");
+  runGit(["checkout", "-q", "-b", "feature", root], cwd);
+  commit(cwd, "feature.txt", "feature", "feature commit");
+  runGit(["checkout", "-q", "main"], cwd);
+  const firstParent = commit(cwd, "main.txt", "main", "main commit");
+  runGit(["merge", "-q", "--no-ff", "feature", "-m", "merge feature"], cwd);
+  const mergeCommit = runGit(["rev-parse", "HEAD"], cwd);
+
+  return { cwd, commits: { stale, firstParent, mergeCommit } };
+}
+
 describe("scan base selection", () => {
   let repo: ReturnType<typeof createMigrationRepo>;
   const deps = {
@@ -85,6 +108,10 @@ describe("scan base selection", () => {
 
   afterAll(() => {
     rmSync(repo.cwd, { recursive: true, force: true });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("resolves git refs to commit SHAs", () => {
@@ -133,6 +160,152 @@ describe("scan base selection", () => {
   it("keeps normal automatic scans from creating releases with zero commits", () => {
     const scanBase = selectAutomaticScanBase([], repo.commits.head, deps, repo.cwd);
     expect(shouldCreateReleaseForScan(0, scanBase)).toBe(false);
+  });
+
+  it("scans only a merge commit when release candidates cannot be used", () => {
+    const mergeRepo = createMergeRepo();
+    const mergeDeps = {
+      verifyAncestorReachable: (sha: string, headSha: string) => verifyAncestorReachable(sha, headSha, mergeRepo.cwd),
+    };
+
+    try {
+      const scanBase = selectAutomaticScanBase(
+        [
+          {
+            id: "stale-release",
+            name: "stale release",
+            createdAt: new Date().toISOString(),
+            commitSha: mergeRepo.commits.stale,
+          },
+        ],
+        mergeRepo.commits.mergeCommit,
+        mergeDeps,
+        mergeRepo.cwd,
+      );
+
+      expect(scanBase).toEqual({
+        kind: "first-sync",
+        sha: mergeRepo.commits.mergeCommit,
+        candidatesConsidered: 1,
+      });
+      expect(scanBase.sha).not.toBe(mergeRepo.commits.firstParent);
+    } finally {
+      rmSync(mergeRepo.cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the first-sync boundary when there are no release candidates", () => {
+    const mergeRepo = createMergeRepo();
+    const mergeDeps = {
+      verifyAncestorReachable: (sha: string, headSha: string) => verifyAncestorReachable(sha, headSha, mergeRepo.cwd),
+    };
+
+    try {
+      expect(selectAutomaticScanBase([], mergeRepo.commits.mergeCommit, mergeDeps, mergeRepo.cwd)).toEqual({
+        kind: "first-sync",
+        sha: mergeRepo.commits.firstParent,
+        candidatesConsidered: 0,
+      });
+    } finally {
+      rmSync(mergeRepo.cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("warns when every SHA-bearing candidate is rejected", () => {
+    const warn = vi.spyOn(log, "warn");
+
+    selectAutomaticScanBase(
+      [
+        {
+          id: "stale-release",
+          name: "stale release",
+          createdAt: new Date().toISOString(),
+          commitSha: repo.commits.stale,
+        },
+      ],
+      repo.commits.head,
+      deps,
+      repo.cwd,
+    );
+
+    expect(warn).toHaveBeenCalledWith(
+      "None of the last 1 synced releases' commit SHAs exist in this repository's history. Syncing only the current commit until a scan base can be established. If this pipeline receives syncs from multiple repositories, use one pipeline per repository; otherwise pass --base-ref to pin the scan range.",
+    );
+  });
+
+  it("warns when candidates do not carry commit SHAs", () => {
+    const warn = vi.spyOn(log, "warn");
+
+    selectAutomaticScanBase(
+      [
+        {
+          id: "manual-release",
+          name: "manual release",
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      repo.commits.head,
+      deps,
+      repo.cwd,
+    );
+
+    expect(warn).toHaveBeenCalledWith(
+      "None of the last 1 releases carry a commit SHA (they were likely created manually). Syncing only the current commit until a scan base can be established. If this pipeline receives syncs from multiple repositories, use one pipeline per repository; otherwise pass --base-ref to pin the scan range.",
+    );
+  });
+
+  it("warns when GraphQL candidates have null commit SHAs", () => {
+    const warn = vi.spyOn(log, "warn");
+    const manualRelease = {
+      id: "manual-release",
+      name: "manual release",
+      createdAt: new Date().toISOString(),
+      commitSha: null,
+    } as unknown as Release;
+
+    selectAutomaticScanBase([manualRelease], repo.commits.head, deps, repo.cwd);
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("they were likely created manually"));
+  });
+
+  it("does not warn on a genuine first sync", () => {
+    const warn = vi.spyOn(log, "warn");
+
+    selectAutomaticScanBase([], repo.commits.head, deps, repo.cwd);
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("does not warn when it finds a reachable release anchor", () => {
+    const warn = vi.spyOn(log, "warn");
+
+    selectAutomaticScanBase(
+      [
+        {
+          id: "reachable-release",
+          name: "reachable release",
+          createdAt: new Date().toISOString(),
+          commitSha: repo.commits.api1,
+        },
+      ],
+      repo.commits.head,
+      deps,
+      repo.cwd,
+    );
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("warns only when scans exceed the broad-scan threshold", () => {
+    const scanBase: ScanBase = { kind: "release", sha: repo.commits.api1 };
+    const baseRefScanBase: ScanBase = { kind: "base-ref", sha: repo.commits.api1, ref: "release-start" };
+
+    expect(getBroadScanWarning(BROAD_SCAN_COMMIT_THRESHOLD, scanBase)).toBeUndefined();
+    expect(getBroadScanWarning(BROAD_SCAN_COMMIT_THRESHOLD + 1, scanBase)).toContain("Scanning 101 commits");
+    expect(getBroadScanWarning(BROAD_SCAN_COMMIT_THRESHOLD + 1, baseRefScanBase)).toContain(
+      "linked to the target release. This range was explicitly requested.",
+    );
+    expect(getBroadScanWarning(BROAD_SCAN_COMMIT_THRESHOLD + 1, baseRefScanBase)).not.toContain("Pass --version");
   });
 
   it("fails clearly for refs that do not resolve to a commit", () => {
