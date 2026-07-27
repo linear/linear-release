@@ -156,6 +156,7 @@ linear-release update --stage="in review" --name="Release 1.2.0"
 | `--stage`              | `update`                     | Target deployment stage (required for `update`)                                                                                                                                                                                                                      |
 | `--include-paths`      | `sync`                       | Filter commits by changed file paths                                                                                                                                                                                                                                 |
 | `--include-subjects`   | `sync`                       | Filter commits whose subject (first line) matches a regex                                                                                                                                                                                                            |
+| `--issue-pattern`      | `sync`                       | Extract issue identifiers captured by group 1 from commit subjects                                                                                                                                                                                                   |
 | `--link`               | `sync`, `complete`, `update` | Add a link to the targeted release. Use `--link "https://example.com"` or `--link "Label=https://example.com"`; repeat the flag to add multiple links.                                                                                                               |
 | `--document`           | `sync`, `complete`, `update` | Attach a document. `--document "Title=...markdown..."`; repeat for multiple docs. Existing documents with the same title on the release are updated.                                                                                                                 |
 | `--document-file`      | `sync`, `complete`, `update` | Same as `--document` but reads the body from a file: `--document-file "Title=path/to/file.md"`. Use `-` to read from stdin.                                                                                                                                          |
@@ -232,6 +233,23 @@ linear-release sync --include-subjects="^(feat|fix|perf):"
 The regex is matched against the commit subject only (everything before the first newline) — body lines such as squash dumps or co-author trailers are ignored. Use the regex's own `|` alternation to combine multiple patterns; remember to escape regex metacharacters in shell strings.
 
 `--include-subjects` composes with `--include-paths`: a commit must pass both filters to be scanned.
+
+### Custom issue patterns
+
+Use `--issue-pattern` to extract issue identifiers from a custom commit-subject convention. Capture the identifier in group 1; the regex is applied to the subject only, case-insensitively, and anywhere in the subject, with all matches collected. It is additive to the built-in branch-name, magic-word, and subject-pattern detection.
+
+```bash
+# Conventional Commits with a bracketed identifier
+linear-release sync --issue-pattern='\[([A-Z]+-\d+)\]'
+# Matches: feat(routing)[ENG-123]: add stop reordering
+
+# Bare identifiers anywhere in the subject
+linear-release sync --issue-pattern='\b([A-Z]+-\d+)\b'
+# Matches: feat(api): ASP-621 handle payload
+# Also matches both IDs: fix(scope): color button red DEV-123 DEV-124
+```
+
+Identifiers that do not exist in the workspace are ignored server-side, so the broad recipe is safe but can be noisy (for example, it also matches `UTF-8`). Reverting a commit whose issues were linked only through `--issue-pattern` does not un-link them, just as with the built-in subject patterns.
 
 ### Release Links
 

@@ -200,6 +200,18 @@ function matchCommonSubjectPatterns(message: string): IdentifierMatch[] {
   return results;
 }
 
+function matchCustomSubjectPattern(message: string, pattern: RegExp): IdentifierMatch[] {
+  const subject = getCommitSubject(message);
+  const globalPattern = pattern.global ? pattern : new RegExp(pattern.source, `${pattern.flags}g`);
+  const results: IdentifierMatch[] = [];
+  for (const match of subject.matchAll(globalPattern)) {
+    if (match[1]) {
+      results.push(...matchAllIdentifiers(match[1]));
+    }
+  }
+  return results;
+}
+
 /**
  * Extract issue identifiers from text only when preceded by a magic word.
  * Processes text line-by-line, matching Linear's detection behavior.
@@ -227,10 +239,13 @@ function matchMagicWordIdentifiers(text: string): IdentifierMatch[] {
 
 export type ExtractedIdentifier = {
   identifier: string;
-  source: "branch_name" | "commit_message";
+  source: "branch_name" | "commit_message" | "issue_pattern";
 };
 
-export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): ExtractedIdentifier[] {
+export function extractLinearIssueIdentifiersForCommit(
+  commit: CommitContext,
+  options: { issuePattern?: RegExp | null } = {},
+): ExtractedIdentifier[] {
   if (!commit) {
     return [];
   }
@@ -273,6 +288,16 @@ export function extractLinearIssueIdentifiersForCommit(commit: CommitContext): E
           identifier: match.identifier,
           source: "commit_message",
         });
+      }
+    }
+    if (options.issuePattern) {
+      for (const match of matchCustomSubjectPattern(message, options.issuePattern)) {
+        if (!found.has(match.identifier)) {
+          found.set(match.identifier, {
+            identifier: match.identifier,
+            source: "issue_pattern",
+          });
+        }
       }
     }
   }
