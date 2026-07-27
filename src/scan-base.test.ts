@@ -119,8 +119,8 @@ describe("scan base selection", () => {
     expect(resolveCommitRef("main~1", repo.cwd)).toBe(repo.commits.web);
   });
 
-  it("uses --base-ref as an exclusive scan base with include paths", () => {
-    const commits = getCommitContextsBetweenShas(repo.commits.api1, repo.commits.head, {
+  it("uses --base-ref as an exclusive scan base with include paths", async () => {
+    const commits = await getCommitContextsBetweenShas(repo.commits.api1, repo.commits.head, {
       includePaths: ["apps/api/**"],
       cwd: repo.cwd,
     });
@@ -128,16 +128,16 @@ describe("scan base selection", () => {
     expect(commits.map((c) => c.sha)).toEqual([repo.commits.api2]);
   });
 
-  it("allows the root commit as an exclusive scan base", () => {
-    const commits = getCommitContextsBetweenShas(repo.commits.root, repo.commits.head, {
+  it("allows the root commit as an exclusive scan base", async () => {
+    const commits = await getCommitContextsBetweenShas(repo.commits.root, repo.commits.head, {
       cwd: repo.cwd,
     });
 
     expect(commits.map((c) => c.sha)).toEqual([repo.commits.api2, repo.commits.web, repo.commits.api1]);
   });
 
-  it("treats --base-ref equal to HEAD as an empty range", () => {
-    const commits = getCommitContextsBetweenShas(repo.commits.head, repo.commits.head, {
+  it("treats --base-ref equal to HEAD as an empty range", async () => {
+    const commits = await getCommitContextsBetweenShas(repo.commits.head, repo.commits.head, {
       includePaths: ["apps/api/**"],
       inspectSingleCommit: false,
       cwd: repo.cwd,
@@ -146,8 +146,8 @@ describe("scan base selection", () => {
     expect(commits).toEqual([]);
   });
 
-  it("still creates a release for an accepted --base-ref scan with zero matching commits", () => {
-    const commits = getCommitContextsBetweenShas(repo.commits.api1, repo.commits.head, {
+  it("still creates a release for an accepted --base-ref scan with zero matching commits", async () => {
+    const commits = await getCommitContextsBetweenShas(repo.commits.api1, repo.commits.head, {
       includePaths: ["does-not-match/**"],
       cwd: repo.cwd,
     });
@@ -346,7 +346,7 @@ describe("scan base selection", () => {
     );
   });
 
-  it("supports GitFlow hotfix releases by letting --base-ref use the integration fork point", () => {
+  it("supports GitFlow hotfix releases by letting --base-ref use the integration fork point", async () => {
     const gitFlowRepo = createGitFlowHotfixRepo();
     const gitFlowDeps = {
       verifyAncestorReachable: (sha: string, headSha: string) => verifyAncestorReachable(sha, headSha, gitFlowRepo.cwd),
@@ -369,9 +369,11 @@ describe("scan base selection", () => {
 
       expect(automaticBase).toEqual({ kind: "release", sha: gitFlowRepo.commits.previousRelease });
       expect(
-        getCommitContextsBetweenShas(automaticBase.sha, gitFlowRepo.commits.head, { cwd: gitFlowRepo.cwd }).map(
-          (c) => c.message?.split("\n")[0],
-        ),
+        (
+          await getCommitContextsBetweenShas(automaticBase.sha, gitFlowRepo.commits.head, {
+            cwd: gitFlowRepo.cwd,
+          })
+        ).map((c) => c.message?.split("\n")[0]),
       ).toEqual([
         "[HOT-1] hotfix commit",
         "Merge release/3.34.0 back into develop",
@@ -387,10 +389,12 @@ describe("scan base selection", () => {
         assertBaseRefIsAncestor("$(git merge-base develop HEAD)", baseRef, gitFlowRepo.commits.head, gitFlowDeps),
       ).not.toThrow();
       expect(
-        getCommitContextsBetweenShas(baseRef, gitFlowRepo.commits.head, {
-          inspectSingleCommit: false,
-          cwd: gitFlowRepo.cwd,
-        }).map((c) => c.message?.split("\n")[0]),
+        (
+          await getCommitContextsBetweenShas(baseRef, gitFlowRepo.commits.head, {
+            inspectSingleCommit: false,
+            cwd: gitFlowRepo.cwd,
+          })
+        ).map((c) => c.message?.split("\n")[0]),
       ).toEqual(["[HOT-1] hotfix commit"]);
     } finally {
       rmSync(gitFlowRepo.cwd, { recursive: true, force: true });

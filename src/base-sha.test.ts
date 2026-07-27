@@ -216,9 +216,9 @@ describe("end-to-end: concurrent trains", () => {
     if (repo) rmSync(repo.cwd, { recursive: true, force: true });
   });
 
-  it("naive 'use first candidate' base scans commits already shipped via the main train", () => {
+  it("naive 'use first candidate' base scans commits already shipped via the main train", async () => {
     const naiveBase = candidates[0]!.commitSha!;
-    const range = getCommitContextsBetweenShas(naiveBase, repo.mainHead, { cwd: repo.cwd });
+    const range = await getCommitContextsBetweenShas(naiveBase, repo.mainHead, { cwd: repo.cwd });
     const messages = range.map((c) => c.message?.split("\n")[0]).filter(Boolean);
 
     // m2 and m3 belong to 1.71.0; only m4 is the 1.72.0 bump. Using the
@@ -227,12 +227,12 @@ describe("end-to-end: concurrent trains", () => {
     expect(messages).toEqual(["m4 (1.72.0 HEAD)", "m3 (1.71.0 release)", "m2"]);
   });
 
-  it("findBaseSha picks the main release; range collapses to just the new bump", () => {
+  it("findBaseSha picks the main release; range collapses to just the new bump", async () => {
     const result = findBaseSha(candidates, repo.mainHead, deps);
     expect(result).toEqual({ kind: "found", sha: repo.mainPrev });
     if (result.kind !== "found") return;
 
-    const range = getCommitContextsBetweenShas(result.sha, repo.mainHead, { cwd: repo.cwd });
+    const range = await getCommitContextsBetweenShas(result.sha, repo.mainHead, { cwd: repo.cwd });
     const messages = range.map((c) => c.message?.split("\n")[0]).filter(Boolean);
 
     expect(messages).toEqual(["m4 (1.72.0 HEAD)"]);
