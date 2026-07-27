@@ -1,6 +1,5 @@
 import { execFileSync, execSync } from "node:child_process";
-import { ConfigurationError, inferProviderFromCI } from "./ci-env";
-import type { CommitContext, GitInfo, RepoInfo, RepositoryProvider, ResolvedRepoInfo } from "./types";
+import type { CommitContext, GitInfo, RepoInfo } from "./types";
 import { error as logError, verbose, warn } from "./log";
 
 /** Strips leading "./" or "/" so paths are clean for git pathspec. */
@@ -517,7 +516,7 @@ export function getCommitContextsBetweenShas(
   return commits;
 }
 
-function hostToProvider(host: string): RepositoryProvider | null {
+function hostToProvider(host: string): string | null {
   if (host === "gitlab.com" || host.includes("gitlab")) {
     return "gitlab";
   }
@@ -530,160 +529,55 @@ function hostToProvider(host: string): RepositoryProvider | null {
   return null;
 }
 
-type ParsedAuthority = {
-  authority: string;
-  host: string;
-  port: string | null;
-  hostAuthority: string;
-};
-
-function parseAuthority(value: string): ParsedAuthority | null {
-  const userinfoIndex = value.lastIndexOf("@");
-  const authority = value.slice(userinfoIndex + 1);
-  if (!authority) {
-    return null;
-  }
-
-  if (authority.startsWith("[")) {
-    const bracket = authority.indexOf("]");
-    if (bracket === -1) {
-      return null;
-    }
-    const rawHost = authority.slice(1, bracket);
-    const suffix = authority.slice(bracket + 1);
-    const port = suffix.startsWith(":") && /^\d+$/.test(suffix.slice(1)) ? suffix.slice(1) : null;
-    if (suffix && port === null) {
-      return null;
-    }
+/**
+ * Parses a git remote URL (HTTPS or SSH) into repo information.
+ *
+ * @param remoteUrl The raw git remote URL string.
+ * @returns Parsed repo info, or null if the URL could not be parsed.
+ */
+export function parseRepoUrl(remoteUrl: string): RepoInfo | null {
+  // GitLab nested groups: split on the first slash so subgroup paths fold
+  // into the name segment (e.g. owner=group, name=subgroup/repo).
+  const httpsMatch = remoteUrl.match(/^https?:\/\/(?:[^@]+@)?([^/]+)\/([^/]+)\/(.+?)(?:\.git)?$/);
+  if (httpsMatch) {
+    const host = httpsMatch[1];
+    const owner = httpsMatch[2] || null;
+    const name = httpsMatch[3]?.replace(/\.git$/, "") || null;
     return {
-      authority,
-      host: rawHost.toLowerCase().replace(/\.$/, ""),
-      port,
-      hostAuthority: authority.slice(0, bracket + 1),
+      owner,
+      name,
+      provider: hostToProvider(host),
+      url: owner && name ? `https://${host}/${owner}/${name}` : null,
     };
   }
 
-  const lastColon = authority.lastIndexOf(":");
-  const hasPort =
-    lastColon !== -1 && authority.indexOf(":") === lastColon && /^\d+$/.test(authority.slice(lastColon + 1));
-  const rawHost = hasPort ? authority.slice(0, lastColon) : authority;
-  if (!rawHost) {
-    return null;
-  }
-  return {
-    authority,
-    host: rawHost.toLowerCase().replace(/\.$/, ""),
-    port: hasPort ? authority.slice(lastColon + 1) : null,
-    hostAuthority: rawHost,
-  };
-}
-
-function createRepoInfo(authority: ParsedAuthority, rawPath: string, scheme: RepoInfo["scheme"]): RepoInfo | null {
-  const path = rawPath.replace(/^\/+|\/+$/g, "").replace(/\.git$/i, "");
-  // GitLab nested groups: split on the first slash so subgroup paths fold
-  // into the name segment (e.g. owner=group, name=subgroup/repo).
-  const slash = path.indexOf("/");
-  if (slash <= 0 || slash === path.length - 1) {
-    return null;
-  }
-  const owner = path.slice(0, slash);
-  const name = path.slice(slash + 1);
-  const webAuthority = scheme === "ssh" ? authority.hostAuthority : authority.authority;
-  return {
-    owner,
-    name,
-    provider: hostToProvider(authority.host),
-    url: `https://${webAuthority}/${owner}/${name}`,
-    host: authority.host,
-    port: authority.port,
-    authority: authority.authority,
-    path,
-    scheme,
-  };
-}
-
-export function parseRepoUrl(remoteUrl: string): RepoInfo | null {
-  const urlMatch = remoteUrl.trim().match(/^(https?|ssh):\/\/([^/]+)\/(.+)$/i);
-  if (urlMatch?.[1] && urlMatch[2]) {
-    const scheme = urlMatch[1].toLowerCase() as RepoInfo["scheme"];
-    const authority = parseAuthority(urlMatch[2]);
-    if (!authority) {
-      return null;
-    }
-    try {
-      const parsed = new URL(remoteUrl.trim());
-      return createRepoInfo(authority, parsed.pathname, scheme);
-    } catch {
-      return null;
-    }
-  }
-
-  const sshMatch = remoteUrl.trim().match(/^git@([^:]+):(.+)$/);
-  if (sshMatch?.[1] && sshMatch[2]) {
-    const authority = parseAuthority(sshMatch[1]);
-    return authority ? createRepoInfo(authority, sshMatch[2], "ssh") : null;
+  // Handle SSH URLs: git@github.com:owner/repo.git (GitLab nested groups
+  // follow the same first-slash split as the HTTPS case above).
+  const sshMatch = remoteUrl.match(/^git@([^:]+):([^/]+)\/(.+?)(?:\.git)?$/);
+  if (sshMatch) {
+    const host = sshMatch[1];
+    const owner = sshMatch[2] || null;
+    const name = sshMatch[3]?.replace(/\.git$/, "") || null;
+    return {
+      owner,
+      name,
+      provider: hostToProvider(host),
+      url: owner && name ? `https://${host}/${owner}/${name}` : null,
+    };
   }
 
   return null;
 }
 
-function toResolvedRepoInfo(
-  parsed: RepoInfo,
-  provider: RepositoryProvider,
-  enrichment: { owner?: string; name?: string; url?: string } = {},
-): ResolvedRepoInfo {
-  let owner = enrichment.owner ?? parsed.owner;
-  let name = enrichment.name ?? parsed.name;
-  let url = enrichment.url ?? parsed.url;
-
-  const segments = parsed.path.split("/");
-  if (
-    provider === "bitbucket" &&
-    parsed.scheme !== "ssh" &&
-    parsed.host !== "bitbucket.org" &&
-    segments[0] === "scm" &&
-    segments.length >= 3
-  ) {
-    owner = segments[1] ?? null;
-    name = segments.slice(2).join("/") || null;
-    url = owner && name ? `https://${parsed.authority}/${owner}/${name}` : null;
-  }
-
-  return { owner, name, provider, url };
-}
-
-export function resolveRepoInfo(
-  parsed: RepoInfo,
-  env: Record<string, string | undefined> = process.env,
-): ResolvedRepoInfo | null {
-  const rawOverride = env.LINEAR_RELEASE_REPOSITORY_PROVIDER;
-  if (rawOverride !== undefined) {
-    const provider = rawOverride.trim().toLowerCase();
-    if (provider !== "github" && provider !== "gitlab" && provider !== "bitbucket") {
-      throw new ConfigurationError(
-        `Invalid LINEAR_RELEASE_REPOSITORY_PROVIDER value "${rawOverride}". Expected github, gitlab, or bitbucket.`,
-        "invalid-provider-override",
-        { value: rawOverride },
-      );
-    }
-    return toResolvedRepoInfo(parsed, provider);
-  }
-
-  if (parsed.provider) {
-    return toResolvedRepoInfo(parsed, parsed.provider);
-  }
-
-  const inferred = inferProviderFromCI(env, parsed);
-  return inferred ? toResolvedRepoInfo(parsed, inferred.provider, inferred) : null;
-}
-
-export function getRemoteUrl(remote: string = "origin", cwd: string = process.cwd()): string | null {
+export function getRepoInfo(remote: string = "origin", cwd: string = process.cwd()): RepoInfo | null {
   try {
-    return execFileSync("git", ["remote", "get-url", remote], {
+    const url = execSync(`git remote get-url ${remote}`, {
       cwd,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
     }).trim();
+
+    return parseRepoUrl(url);
   } catch (error) {
     logError(`Failed to read repo info: ${error instanceof Error ? error.message : String(error)}`);
     return null;

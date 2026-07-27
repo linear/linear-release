@@ -168,6 +168,37 @@ afterAll(() => {
   rmSync(mockDirectory, { recursive: true, force: true });
 });
 
+describe("provider detection", () => {
+  it("infers gitlab on GitLab CI for a custom-domain remote", async () => {
+    const cwd = createRepository({ remote: "git@git.example.com:group/repo.git" });
+    const result = await runCli(cwd, ["sync"], {
+      GITLAB_CI: "true",
+      CI_SERVER_HOST: "git.example.com",
+      CI_PROJECT_PATH: "group/repo",
+    });
+    const mutation = requests.find((request) => request.query.includes("mutation syncReleaseByAccessKey"));
+
+    expect(result.code).toBe(0);
+    expect(mutation?.variables?.input?.repository).toEqual({
+      owner: "group",
+      name: "repo",
+      provider: "gitlab",
+      url: "https://git.example.com/group/repo",
+    });
+  });
+
+  it("uses the override ahead of detection", async () => {
+    const cwd = createRepository({ remote: "https://git.example.com/group/repo.git" });
+    const result = await runCli(cwd, ["sync"], {
+      LINEAR_RELEASE_REPOSITORY_PROVIDER: "gitlab",
+    });
+    const mutation = requests.find((request) => request.query.includes("mutation syncReleaseByAccessKey"));
+
+    expect(result.code).toBe(0);
+    expect((mutation?.variables?.input?.repository as Record<string, unknown>)?.provider).toBe("gitlab");
+  });
+});
+
 describe("provider configuration errors", () => {
   it("exits 2 with actionable copy before the mutation for an unknown provider", async () => {
     const cwd = createRepository({ remote: "https://git.example.com/acme/repo.git" });
@@ -189,19 +220,6 @@ describe("provider configuration errors", () => {
 
     expect(result.code).toBe(2);
     expect(result.stderr).toContain("Invalid LINEAR_RELEASE_REPOSITORY_PROVIDER");
-    expect(requests.some((request) => request.query.includes("mutation syncReleaseByAccessKey"))).toBe(false);
-  });
-
-  it("exits 2 with the Azure Repos-specific error", async () => {
-    const remote = "https://dev.azure.com/acme/project/_git/repo.git";
-    const cwd = createRepository({ remote });
-    const result = await runCli(cwd, ["sync"], {
-      BUILD_REPOSITORY_PROVIDER: "TfsGit",
-      BUILD_REPOSITORY_URI: remote,
-    });
-
-    expect(result.code).toBe(2);
-    expect(result.stderr).toContain("Azure Repos repositories are not supported");
     expect(requests.some((request) => request.query.includes("mutation syncReleaseByAccessKey"))).toBe(false);
   });
 
@@ -262,7 +280,6 @@ describe("existing exit behavior and no-origin compatibility", () => {
     const mutation = requests.find((request) => request.query.includes("mutation syncReleaseByAccessKey"));
 
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain('warning: Could not parse remote URL "/srv/git/repo.git"');
     expect(mutation).toBeDefined();
     expect(mutation?.variables?.input).not.toHaveProperty("repository");
   });

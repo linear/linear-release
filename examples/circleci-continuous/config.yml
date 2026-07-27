@@ -11,8 +11,6 @@ jobs:
   linear-release-sync:
     docker:
       - image: cimg/base:current
-    environment:
-      LINEAR_RELEASE_REPOSITORY_PROVIDER: << pipeline.project.type >>
     steps:
       - checkout
       - run:

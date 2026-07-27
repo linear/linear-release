@@ -150,32 +150,11 @@ linear-release update --stage="in review" --name="Release 1.2.0"
 
 ### Provider detection
 
-When `sync` finds an `origin` remote, it determines the repository provider in this order:
-
-1. `LINEAR_RELEASE_REPOSITORY_PROVIDER`, if set.
-2. The remote hostname, including the existing GitHub, GitLab, and Bitbucket hostname matching.
-3. CI platform signals, when they can be bound to the checked-out remote by matching its host or repository path.
-
-CI inference supports GitLab CI, GitHub Actions, Bitbucket Pipelines, Buildkite, Azure Pipelines repositories hosted on GitHub or Bitbucket, AppVeyor, and Semaphore. Hostname detection retains the existing substring matching and GitLab → GitHub → Bitbucket precedence.
-
-Use the override for self-hosted providers on custom domains or CI platforms without a trustworthy provider signal:
+`sync` determines the repository provider from `LINEAR_RELEASE_REPOSITORY_PROVIDER` if set, then the remote hostname, then the GitLab CI environment (`GITLAB_CI` with a matching `CI_SERVER_HOST` or `CI_PROJECT_PATH`) — so self-hosted GitLab on a custom domain works without configuration. If none of these resolve, `sync` stops before making a mutation and exits with code `2` (other errors keep code `1`); with `--json` the error on stderr includes a machine-readable code such as `{"error":"unknown-provider","host":"git.example.com"}`. Set the override for other self-hosted providers on custom domains:
 
 ```bash
 LINEAR_RELEASE_REPOSITORY_PROVIDER=gitlab linear-release sync
 ```
-
-For CircleCI, wire its project type into the job environment:
-
-```yaml
-environment:
-  LINEAR_RELEASE_REPOSITORY_PROVIDER: << pipeline.project.type >> # "github"|"bitbucket"|"gitlab"
-```
-
-If the provider cannot be determined for a remote, `sync` stops before making a mutation and explains how to set the override. These deterministic configuration errors exit with code `2`; other errors continue to exit with code `1`. With `--json`, the error emitted on stderr includes a machine-readable code such as `{"error":"unknown-provider","host":"git.example.com"}`.
-
-The CLI does not probe unknown VCS hosts. Azure Repos, Gitea, Forgejo, and other systems without a supported provider value cannot be synced with repository metadata. A repository with no `origin` remote retains the existing behavior of omitting repository metadata.
-
-For `ssh://` remotes, the SSH port is omitted from the generated web URL. Outside GitLab CI or GitHub Actions, a dedicated SSH hostname may therefore point at a host that does not serve the web UI; those CI environments substitute their canonical project URL when the remote is bound by project path. Bitbucket Server `/scm/PROJECT/repository` URLs are corrected, but relative installs such as `/bitbucket/scm/...` are not.
 
 ### CLI Options
 

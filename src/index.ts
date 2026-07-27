@@ -5,9 +5,7 @@ import {
   ensureCommitAvailable,
   getCommitContextsBetweenShas,
   getCurrentGitInfo,
-  getRemoteUrl,
-  parseRepoUrl,
-  resolveRepoInfo,
+  getRepoInfo,
   resolveCommitRef,
   verifyAncestorReachable,
 } from "./git";
@@ -43,7 +41,7 @@ import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
 import { withRetry } from "./retry";
 import { getCliVersion } from "./version";
-import { ConfigurationError } from "./ci-env";
+import { ConfigurationError, inferProviderFromCI, parseProvider, remoteHost } from "./ci-env";
 
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
   console.log(getCliVersion());
@@ -255,24 +253,32 @@ async function apiRequest<T>(query: string, variables?: Record<string, unknown>)
 }
 
 function getResolvedRepoInfo(): ResolvedRepoInfo | null {
-  const remoteUrl = getRemoteUrl();
-  if (!remoteUrl) {
+  const repoInfo = getRepoInfo();
+  if (!repoInfo) {
     return null;
   }
-  const parsed = parseRepoUrl(remoteUrl);
-  if (!parsed) {
-    warn(`Could not parse remote URL "${remoteUrl}"; syncing without repository information.`);
-    return null;
+  const override = process.env.LINEAR_RELEASE_REPOSITORY_PROVIDER;
+  if (override !== undefined) {
+    const provider = parseProvider(override);
+    if (!provider) {
+      throw new ConfigurationError(
+        `Invalid LINEAR_RELEASE_REPOSITORY_PROVIDER value "${override}". Expected github, gitlab, or bitbucket.`,
+        "invalid-provider-override",
+        { value: override },
+      );
+    }
+    return { ...repoInfo, provider };
   }
-  const resolved = resolveRepoInfo(parsed, process.env);
-  if (!resolved) {
+  const provider = parseProvider(repoInfo.provider) ?? inferProviderFromCI(process.env, repoInfo);
+  if (!provider) {
+    const host = remoteHost(repoInfo) ?? repoInfo.url ?? "unknown";
     throw new ConfigurationError(
-      `Could not determine the VCS provider for remote host "${parsed.host}".\nSet LINEAR_RELEASE_REPOSITORY_PROVIDER=github|gitlab|bitbucket in your CI environment.`,
+      `Could not determine the VCS provider for remote host "${host}".\nSet LINEAR_RELEASE_REPOSITORY_PROVIDER=github|gitlab|bitbucket in your CI environment.`,
       "unknown-provider",
-      { host: parsed.host },
+      { host },
     );
   }
-  return resolved;
+  return { ...repoInfo, provider };
 }
 
 async function syncCommand(): Promise<{
