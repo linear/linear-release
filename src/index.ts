@@ -252,15 +252,12 @@ async function apiRequest<T>(query: string, variables?: Record<string, unknown>)
   return withRetry(() => linearClient.client.rawRequest(query, variables)) as Promise<T>;
 }
 
-function getResolvedRepoInfo(): ResolvedRepoInfo | null {
-  const repoInfo = getRepoInfo();
-  return repoInfo ? resolveRepoInfo(repoInfo) : null;
-}
-
 async function syncCommand(): Promise<{
   release: { id: string; name: string; version?: string; url?: string };
 } | null> {
   logEnvironmentSummary();
+
+  const repoInfo = resolveRepoInfo(getRepoInfo());
 
   // Fetch pipeline settings from API
   const pipelineSettings = await getPipelineSettings();
@@ -374,8 +371,6 @@ async function syncCommand(): Promise<{
   if (revertedIssueReferences.length > 0) {
     info(`Reverted issue keys: ${revertedIssueReferences.map((f) => f.identifier).join(", ")}`);
   }
-
-  const repoInfo = getResolvedRepoInfo();
 
   const issueIds = issueReferences.map((f) => f.identifier);
   const parts: string[] = [];
@@ -808,16 +803,12 @@ timeout.unref();
 
 main()
   .catch((e) => {
-    if (e instanceof ConfigurationError) {
-      if (jsonOutput) {
-        process.stderr.write(`${JSON.stringify({ error: e.code, ...e.details })}\n`);
-      } else {
-        error(`Error: ${e.message}`);
-      }
-      process.exit(2);
+    if (e instanceof ConfigurationError && jsonOutput) {
+      process.stderr.write(`${JSON.stringify({ error: e.code, message: e.message })}\n`);
+    } else {
+      error(`Error: ${e.message}`);
     }
-    error(`Error: ${e.message}`);
-    process.exit(1);
+    process.exit(e instanceof ConfigurationError ? 2 : 1);
   })
   .finally(() => {
     clearTimeout(timeout);

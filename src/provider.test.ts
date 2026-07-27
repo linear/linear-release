@@ -9,6 +9,13 @@ const selfHosted: RepoInfo = {
   url: "https://git.example.com/group/subgroup/repo",
 };
 
+const detected: RepoInfo = {
+  owner: "acme",
+  name: "repo",
+  provider: "github",
+  url: "https://github.com/acme/repo",
+};
+
 function captureError(fn: () => unknown): ConfigurationError {
   try {
     fn();
@@ -21,37 +28,43 @@ function captureError(fn: () => unknown): ConfigurationError {
 }
 
 describe("resolveRepoInfo", () => {
+  it("returns null without a repo", () => {
+    expect(resolveRepoInfo(null, {})).toBeNull();
+  });
+
   it("keeps hostname-detected providers", () => {
-    const detected: RepoInfo = { owner: "acme", name: "repo", provider: "github", url: "https://github.com/acme/repo" };
     expect(resolveRepoInfo(detected, {})).toEqual(detected);
   });
 
   it("prefers the override over detection", () => {
-    const detected: RepoInfo = { owner: "acme", name: "repo", provider: "github", url: "https://github.com/acme/repo" };
-    expect(resolveRepoInfo(detected, { LINEAR_VCS_PROVIDER: "GitLab" }).provider).toBe("gitlab");
+    expect(resolveRepoInfo(detected, { LINEAR_VCS_PROVIDER: "GitLab" })?.provider).toBe("gitlab");
+  });
+
+  it("treats an empty override as unset", () => {
+    expect(resolveRepoInfo(detected, { LINEAR_VCS_PROVIDER: "" })?.provider).toBe("github");
   });
 
   it("throws on an invalid override", () => {
     const error = captureError(() => resolveRepoInfo(selfHosted, { LINEAR_VCS_PROVIDER: "gitea" }));
     expect(error.code).toBe("invalid-provider-override");
-    expect(error.details).toEqual({ value: "gitea" });
+    expect(error.message).toContain('Invalid LINEAR_VCS_PROVIDER value "gitea"');
   });
 
   it("infers gitlab on GitLab CI when the remote host matches CI_SERVER_HOST", () => {
     const env = { GITLAB_CI: "true", CI_SERVER_HOST: "git.example.com" };
-    expect(resolveRepoInfo(selfHosted, env).provider).toBe("gitlab");
+    expect(resolveRepoInfo(selfHosted, env)?.provider).toBe("gitlab");
   });
 
   it("infers gitlab when clone_url rewrites the host but the project path matches", () => {
     const env = { GITLAB_CI: "true", CI_SERVER_HOST: "git.example.com", CI_PROJECT_PATH: "group/subgroup/repo" };
     const rewritten = { ...selfHosted, url: "https://192.168.1.23/group/subgroup/repo" };
-    expect(resolveRepoInfo(rewritten, env).provider).toBe("gitlab");
+    expect(resolveRepoInfo(rewritten, env)?.provider).toBe("gitlab");
   });
 
   it("matches hosts case-insensitively and ignores the port", () => {
     const env = { GITLAB_CI: "true", CI_SERVER_HOST: "git.example.com" };
     const withPort = { ...selfHosted, url: "https://Git.Example.com:8443/group/subgroup/repo" };
-    expect(resolveRepoInfo(withPort, env).provider).toBe("gitlab");
+    expect(resolveRepoInfo(withPort, env)?.provider).toBe("gitlab");
   });
 
   it("throws for a foreign clone when both host and project path mismatch", () => {
@@ -68,7 +81,6 @@ describe("resolveRepoInfo", () => {
   it("throws an actionable error outside CI for an unknown host", () => {
     const error = captureError(() => resolveRepoInfo(selfHosted, {}));
     expect(error.code).toBe("unknown-provider");
-    expect(error.details).toEqual({ host: "git.example.com" });
     expect(error.message).toContain('Could not determine the VCS provider for remote host "git.example.com"');
     expect(error.message).toContain("Set LINEAR_VCS_PROVIDER=github|gitlab|bitbucket");
   });

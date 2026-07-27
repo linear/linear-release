@@ -1,5 +1,5 @@
 import { execFileSync, execSync } from "node:child_process";
-import type { CommitContext, GitInfo, RepoInfo } from "./types";
+import type { CommitContext, GitInfo, RepoInfo, RepositoryProvider } from "./types";
 import { error as logError, verbose, warn } from "./log";
 
 /** Strips leading "./" or "/" so paths are clean for git pathspec. */
@@ -516,7 +516,7 @@ export function getCommitContextsBetweenShas(
   return commits;
 }
 
-function hostToProvider(host: string): string | null {
+function hostToProvider(host: string): RepositoryProvider | null {
   if (host === "gitlab.com" || host.includes("gitlab")) {
     return "gitlab";
   }
