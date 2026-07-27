@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { LinearClient, LinearClientOptions } from "@linear/sdk";
 import {
   assertGitAvailable,
+  countCommitsInRange,
   ensureCommitAvailable,
   getCommitContextsBetweenShas,
   getCurrentGitInfo,
@@ -11,6 +12,7 @@ import {
 } from "./git";
 import {
   assertBaseRefIsAncestor,
+  evaluateScanRangeSize,
   getBroadScanWarning,
   ScanBase,
   selectAutomaticScanBase,
@@ -308,6 +310,21 @@ async function syncCommand(): Promise<{
       warn(
         `Could not make sha ${latestSha} available in local git history; falling back to current commit only. ${message}`,
       );
+      inspectingOnlyCurrentCommit = true;
+      latestSha = currentCommit.commit;
+    }
+  }
+
+  if (latestSha !== currentCommit.commit) {
+    const rangeCommitCount = countCommitsInRange(latestSha, currentCommit.commit);
+    if (rangeCommitCount !== null) {
+      verbose(`Range ${latestSha.slice(0, 7)}..${currentCommit.commit.slice(0, 7)} spans ${rangeCommitCount} commits`);
+    }
+    const rangeSize = evaluateScanRangeSize(rangeCommitCount, scanBase);
+    if (rangeSize.warning) {
+      warn(rangeSize.warning);
+    }
+    if (rangeSize.degradeToCurrentCommit) {
       inspectingOnlyCurrentCommit = true;
       latestSha = currentCommit.commit;
     }

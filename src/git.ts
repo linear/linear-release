@@ -160,6 +160,24 @@ export function getCommitParents(sha: string, cwd: string = process.cwd()): stri
   }
 }
 
+/**
+ * Counts commits in `fromSha..toSha` (exclusive of `fromSha`). Returns null
+ * when the count cannot be determined; callers treat that as "no guard".
+ */
+export function countCommitsInRange(fromSha: string, toSha: string, cwd: string = process.cwd()): number | null {
+  try {
+    const out = execFileSync("git", ["rev-list", "--count", `${fromSha}..${toSha}`], {
+      cwd,
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    }).trim();
+    const count = Number.parseInt(out, 10);
+    return Number.isNaN(count) ? null : count;
+  } catch {
+    return null;
+  }
+}
+
 export function commitExists(sha: string, cwd: string = process.cwd()): boolean {
   try {
     execSync(`git cat-file -e ${sha}^{commit}`, {

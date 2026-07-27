@@ -8,7 +8,9 @@ import * as log from "./log";
 import {
   assertBaseRefIsAncestor,
   BROAD_SCAN_COMMIT_THRESHOLD,
+  evaluateScanRangeSize,
   getBroadScanWarning,
+  SCAN_COMMIT_HARD_LIMIT,
   type ScanBase,
   selectAutomaticScanBase,
   shouldCreateReleaseForScan,
@@ -399,5 +401,30 @@ describe("scan base selection", () => {
     } finally {
       rmSync(gitFlowRepo.cwd, { recursive: true, force: true });
     }
+  });
+});
+
+describe("evaluateScanRangeSize", () => {
+  const releaseBase: ScanBase = { kind: "release", sha: "a".repeat(40) };
+  const baseRefBase: ScanBase = { kind: "base-ref", sha: "b".repeat(40), ref: "v1.0.0" };
+
+  it("degrades an automatic range above the hard limit to current-commit-only", () => {
+    const result = evaluateScanRangeSize(SCAN_COMMIT_HARD_LIMIT + 1, releaseBase);
+    expect(result.degradeToCurrentCommit).toBe(true);
+    expect(result.warning).toContain(`${SCAN_COMMIT_HARD_LIMIT}-commit safety limit`);
+  });
+
+  it("does not degrade at exactly the hard limit", () => {
+    expect(evaluateScanRangeSize(SCAN_COMMIT_HARD_LIMIT, releaseBase)).toEqual({ degradeToCurrentCommit: false });
+  });
+
+  it("warns but proceeds for an explicitly requested --base-ref range above the limit", () => {
+    const result = evaluateScanRangeSize(SCAN_COMMIT_HARD_LIMIT + 1, baseRefBase);
+    expect(result.degradeToCurrentCommit).toBe(false);
+    expect(result.warning).toContain("explicitly requested");
+  });
+
+  it("never blocks the scan when the count could not be determined", () => {
+    expect(evaluateScanRangeSize(null, releaseBase)).toEqual({ degradeToCurrentCommit: false });
   });
 });
