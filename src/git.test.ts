@@ -11,6 +11,7 @@ import {
   extractBranchNameFromMergeMessage,
   getCommitContext,
   getCommitContextsBetweenShas,
+  getCurrentGitInfo,
   getCommitParents,
   getRemoteUrl,
   isAncestor,
@@ -42,28 +43,36 @@ describe("normalizePathspec", () => {
 });
 
 describe("buildPathspecArgs", () => {
-  it("should return empty string for null", () => {
-    expect(buildPathspecArgs(null)).toBe("");
+  it("should return an empty array for null", () => {
+    expect(buildPathspecArgs(null)).toEqual([]);
   });
 
-  it("should return empty string for empty array", () => {
-    expect(buildPathspecArgs([])).toBe("");
+  it("should return an empty array for an empty array", () => {
+    expect(buildPathspecArgs([])).toEqual([]);
   });
 
   it("should build pathspec for single pattern", () => {
-    expect(buildPathspecArgs(["android/**"])).toBe('-- ":(top,glob)android/**"');
+    expect(buildPathspecArgs(["android/**"])).toEqual(["--", ":(top,glob)android/**"]);
   });
 
   it("should build pathspec for multiple patterns", () => {
-    expect(buildPathspecArgs(["android/**", "shared/**"])).toBe('-- ":(top,glob)android/**" ":(top,glob)shared/**"');
+    expect(buildPathspecArgs(["android/**", "shared/**"])).toEqual([
+      "--",
+      ":(top,glob)android/**",
+      ":(top,glob)shared/**",
+    ]);
   });
 
   it("should filter out empty patterns", () => {
-    expect(buildPathspecArgs(["android/**", "", "  "])).toBe('-- ":(top,glob)android/**"');
+    expect(buildPathspecArgs(["android/**", "", "  "])).toEqual(["--", ":(top,glob)android/**"]);
   });
 
   it("should normalize patterns", () => {
-    expect(buildPathspecArgs(["./android/**", "  ios/**  "])).toBe('-- ":(top,glob)android/**" ":(top,glob)ios/**"');
+    expect(buildPathspecArgs(["./android/**", "  ios/**  "])).toEqual([
+      "--",
+      ":(top,glob)android/**",
+      ":(top,glob)ios/**",
+    ]);
   });
 });
 
@@ -268,6 +277,44 @@ function runGit(command: string, cwd: string): string {
     stdio: ["ignore", "pipe", "ignore"],
     encoding: "utf8",
   }).trim();
+}
+
+function buildFastImportMessage(index: number, messageBytes: number): string {
+  const header = `Merge pull request #${40000 + index} from owner/feature/PLAT-${10000 + index}-sync-pipeline\n\nPLAT-${10000 + index}: update service ${index}\n\n`;
+  const filler = "* chore(deps): bump internal packages and regenerate lockfile entries for the release train\n";
+  return (header + filler.repeat(Math.ceil((messageBytes - header.length) / filler.length))).slice(0, messageBytes);
+}
+
+function createFastImportRepo(
+  commitCount: number,
+  messageBytes: number,
+): {
+  cwd: string;
+  anchor: string;
+  commits: string[];
+  head: string;
+} {
+  const cwd = mkdtempSync(join(tmpdir(), "linear-release-fast-import-"));
+  runGit("init", cwd);
+  const records: string[] = [];
+  const appendCommit = (mark: number, message: string, from?: number) => {
+    records.push(
+      `commit refs/heads/main\nmark :${mark}\ncommitter Repro Bot <repro@example.com> ${1753000000 + mark * 60} +0000\ndata ${Buffer.byteLength(message)}\n${message}\n${from ? `from :${from}\n` : ""}\n`,
+    );
+  };
+
+  appendCommit(1, "chore: release anchor v20260506\n");
+  for (let index = 1; index <= commitCount; index++) {
+    appendCommit(index + 1, buildFastImportMessage(index, messageBytes), index);
+  }
+  execSync("git fast-import", {
+    cwd,
+    input: records.join(""),
+    stdio: ["pipe", "ignore", "pipe"],
+  });
+
+  const [anchor, ...commits] = runGit("rev-list --reverse main", cwd).split("\n");
+  return { cwd, anchor: anchor!, commits, head: commits[commits.length - 1]! };
 }
 
 /**
@@ -613,7 +660,7 @@ describe("getCommitContextsBetweenShas", () => {
     repo = createTempRepo();
   });
 
-  it("should auto-fetch deeper history for shallow clones", () => {
+  it("should auto-fetch deeper history for shallow clones", async () => {
     const shallowRepo = createShallowCloneRepo();
 
     try {
@@ -621,7 +668,7 @@ describe("getCommitContextsBetweenShas", () => {
 
       ensureCommitAvailable(shallowRepo.commits.first, shallowRepo.cwd);
 
-      const result = getCommitContextsBetweenShas(shallowRepo.commits.first, shallowRepo.commits.third, {
+      const result = await getCommitContextsBetweenShas(shallowRepo.commits.first, shallowRepo.commits.third, {
         cwd: shallowRepo.cwd,
       });
 
@@ -638,26 +685,26 @@ describe("getCommitContextsBetweenShas", () => {
     rmSync(repo.cwd, { recursive: true, force: true });
   });
 
-  it("should return empty array for invalid SHA patterns", () => {
+  it("should return empty array for invalid SHA patterns", async () => {
     expect(
-      getCommitContextsBetweenShas("invalid", repo.commits.third, {
+      await getCommitContextsBetweenShas("invalid", repo.commits.third, {
         cwd: repo.cwd,
       }),
     ).toEqual([]);
     expect(
-      getCommitContextsBetweenShas(repo.commits.first, "invalid", {
+      await getCommitContextsBetweenShas(repo.commits.first, "invalid", {
         cwd: repo.cwd,
       }),
     ).toEqual([]);
     expect(
-      getCommitContextsBetweenShas("not-a-sha", "also-invalid", {
+      await getCommitContextsBetweenShas("not-a-sha", "also-invalid", {
         cwd: repo.cwd,
       }),
     ).toEqual([]);
   });
 
-  it("should return commits between two valid SHAs", () => {
-    const result = getCommitContextsBetweenShas(repo.commits.first, repo.commits.third, {
+  it("should return commits between two valid SHAs", async () => {
+    const result = await getCommitContextsBetweenShas(repo.commits.first, repo.commits.third, {
       cwd: repo.cwd,
     });
     expect(result).toHaveLength(2);
@@ -665,16 +712,16 @@ describe("getCommitContextsBetweenShas", () => {
     expect(result[1]?.sha).toBe(repo.commits.second);
   });
 
-  it("should return single commit when fromSha equals toSha", () => {
-    const result = getCommitContextsBetweenShas(repo.commits.first, repo.commits.first, {
+  it("should return single commit when fromSha equals toSha", async () => {
+    const result = await getCommitContextsBetweenShas(repo.commits.first, repo.commits.first, {
       cwd: repo.cwd,
     });
     expect(result).toHaveLength(1);
     expect(result[0]?.sha).toBe(repo.commits.first);
   });
 
-  it("should collapse horizontal whitespace but preserve newlines", () => {
-    const result = getCommitContextsBetweenShas(repo.commits.first, repo.commits.first, {
+  it("should collapse horizontal whitespace but preserve newlines", async () => {
+    const result = await getCommitContextsBetweenShas(repo.commits.first, repo.commits.first, {
       cwd: repo.cwd,
     });
     expect(result).toHaveLength(1);
@@ -682,7 +729,7 @@ describe("getCommitContextsBetweenShas", () => {
     expect(result[0]?.message).toBe("feat: add src file with extra spaces");
   });
 
-  it("should preserve newlines so extractors can distinguish title from body", () => {
+  it("should preserve newlines so extractors can distinguish title from body", async () => {
     // Standalone tempdir so the multiline body is independent of the shared fixture.
     const cwd = mkdtempSync(join(tmpdir(), "linear-release-multiline-"));
     try {
@@ -694,7 +741,7 @@ describe("getCommitContextsBetweenShas", () => {
       runGit('commit -m "Add feature (#100)" -m "Closes LIN-200" -m "Co-authored-by: Other <other@example.com>"', cwd);
       const sha = runGit("rev-parse HEAD", cwd);
 
-      const result = getCommitContextsBetweenShas(sha, sha, { cwd });
+      const result = await getCommitContextsBetweenShas(sha, sha, { cwd });
       expect(result).toHaveLength(1);
       expect(result[0]?.message).toBe(
         "Add feature (#100)\n\nCloses LIN-200\n\nCo-authored-by: Other <other@example.com>",
@@ -706,23 +753,23 @@ describe("getCommitContextsBetweenShas", () => {
     }
   });
 
-  it("should return empty array when no commits in range", () => {
+  it("should return empty array when no commits in range", async () => {
     // third..first is empty because first is an ancestor of third
-    const result = getCommitContextsBetweenShas(repo.commits.third, repo.commits.first, {
+    const result = await getCommitContextsBetweenShas(repo.commits.third, repo.commits.first, {
       cwd: repo.cwd,
     });
     expect(result).toEqual([]);
   });
 
-  it("should filter commits by includePaths patterns", () => {
-    const withSrcFilter = getCommitContextsBetweenShas(repo.commits.first, repo.commits.third, {
+  it("should filter commits by includePaths patterns", async () => {
+    const withSrcFilter = await getCommitContextsBetweenShas(repo.commits.first, repo.commits.third, {
       includePaths: ["src/**"],
       cwd: repo.cwd,
     });
     expect(withSrcFilter).toHaveLength(1);
     expect(withSrcFilter[0]?.sha).toBe(repo.commits.third);
 
-    const withGithubFilter = getCommitContextsBetweenShas(repo.commits.first, repo.commits.third, {
+    const withGithubFilter = await getCommitContextsBetweenShas(repo.commits.first, repo.commits.third, {
       includePaths: [".github/**"],
       cwd: repo.cwd,
     });
@@ -730,7 +777,7 @@ describe("getCommitContextsBetweenShas", () => {
     expect(withGithubFilter[0]?.sha).toBe(repo.commits.second);
   });
 
-  it("should resolve paths relative to repo root even when process.cwd() is a subdirectory", () => {
+  it("should resolve paths relative to repo root even when process.cwd() is a subdirectory", async () => {
     // Simulates running the CLI from a subdirectory (e.g., mobile-ios/ci_scripts)
     // while using paths relative to the repo root (e.g., src/**)
     const originalCwd = process.cwd();
@@ -740,7 +787,7 @@ describe("getCommitContextsBetweenShas", () => {
       // The `:(top,...)` magic prefix in buildPathspecArgs anchors the glob
       // at the repo root regardless of cwd; without it git would resolve
       // "src/**" against the subdirectory (i.e., src/src/**).
-      const result = getCommitContextsBetweenShas(
+      const result = await getCommitContextsBetweenShas(
         repo.commits.first,
         repo.commits.third,
         { includePaths: ["src/**"] }, // no cwd passed — uses process.cwd()
@@ -753,7 +800,7 @@ describe("getCommitContextsBetweenShas", () => {
     }
   });
 
-  it("should not resolve paths relative to cwd", () => {
+  it("should not resolve paths relative to cwd", async () => {
     // Companion test to the above: verifies that paths are resolved from repo root, not cwd.
     // From within src/, looking for "*.txt" would match src/alpha.txt and src/beta.txt
     // if paths were relative to cwd. With :(top), it looks for <repo>/*.txt which doesn't exist.
@@ -761,13 +808,75 @@ describe("getCommitContextsBetweenShas", () => {
     try {
       process.chdir(join(repo.cwd, "src"));
 
-      const result = getCommitContextsBetweenShas(repo.commits.first, repo.commits.third, {
+      const result = await getCommitContextsBetweenShas(repo.commits.first, repo.commits.third, {
         includePaths: ["*.txt"],
       });
 
       expect(result).toHaveLength(0);
     } finally {
       process.chdir(originalCwd);
+    }
+  });
+
+  it("should parse large commit messages incrementally with intact fields", async () => {
+    const fastImportRepo = createFastImportRepo(3, 1024 * 1024);
+    try {
+      const result = await getCommitContextsBetweenShas(fastImportRepo.anchor, fastImportRepo.head, {
+        cwd: fastImportRepo.cwd,
+      });
+
+      expect(result).toHaveLength(3);
+      for (let resultIndex = 0; resultIndex < result.length; resultIndex++) {
+        const commitIndex = 3 - resultIndex;
+        const expectedSha = fastImportRepo.commits[commitIndex - 1]!;
+        const expectedParent = commitIndex === 1 ? fastImportRepo.anchor : fastImportRepo.commits[commitIndex - 2]!;
+        expect(result[resultIndex]).toEqual({
+          sha: expectedSha,
+          branchName: `feature/PLAT-${10000 + commitIndex}-sync-pipeline`,
+          message: buildFastImportMessage(commitIndex, 1024 * 1024).trim(),
+          parents: [expectedParent],
+        });
+      }
+    } finally {
+      rmSync(fastImportRepo.cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("should stream git log output larger than 256 MiB", async () => {
+    const fastImportRepo = createFastImportRepo(270, 1024 * 1024);
+    try {
+      const result = await getCommitContextsBetweenShas(fastImportRepo.anchor, fastImportRepo.head, {
+        cwd: fastImportRepo.cwd,
+      });
+
+      expect(result).toHaveLength(270);
+      expect(result[0]?.sha).toBe(fastImportRepo.head);
+      expect(result[result.length - 1]?.sha).toBe(fastImportRepo.commits[0]);
+    } finally {
+      rmSync(fastImportRepo.cwd, { recursive: true, force: true });
+    }
+  }, 120_000);
+});
+
+describe("getCurrentGitInfo", () => {
+  it("should preserve branch and commit for a large HEAD message", () => {
+    const repo = initTempRepo({
+      prefix: "linear-release-large-head-",
+      dirs: ["src"],
+      seedFile: { path: "src/file.txt", content: "content" },
+    });
+    try {
+      execSync("git commit --amend -F -", {
+        cwd: repo.cwd,
+        input: "Large HEAD\n\n" + "x".repeat(2 * 1024 * 1024),
+        stdio: ["pipe", "ignore", "pipe"],
+      });
+
+      const info = getCurrentGitInfo(repo.cwd);
+      expect(info.branch).not.toBeNull();
+      expect(info.commit).not.toBeNull();
+    } finally {
+      rmSync(repo.cwd, { recursive: true, force: true });
     }
   });
 });
@@ -784,23 +893,23 @@ describe("merge commit handling", () => {
   });
 
   describe("getCommitContext", () => {
-    it("should return commit context for a valid SHA", () => {
-      const context = getCommitContext(mergeRepo.commits.mergeCommit, mergeRepo.cwd);
+    it("should return commit context for a valid SHA", async () => {
+      const context = await getCommitContext(mergeRepo.commits.mergeCommit, mergeRepo.cwd);
       expect(context).not.toBeNull();
       expect(context?.sha).toBe(mergeRepo.commits.mergeCommit);
       expect(context?.message).toContain("Merge pull request #42");
     });
 
-    it("should extract branch name from merge commit message when decorations are empty", () => {
+    it("should extract branch name from merge commit message when decorations are empty", async () => {
       // Delete the feature branch so decorations won't include it
       runGit("branch -d feature/ENG-123-add-feature", mergeRepo.cwd);
 
-      const context = getCommitContext(mergeRepo.commits.mergeCommit, mergeRepo.cwd);
+      const context = await getCommitContext(mergeRepo.commits.mergeCommit, mergeRepo.cwd);
       expect(context?.branchName).toBe("feature/ENG-123-add-feature");
     });
 
-    it("should return null for invalid SHA", () => {
-      expect(getCommitContext("invalid-sha", mergeRepo.cwd)).toBeNull();
+    it("should return null for invalid SHA", async () => {
+      expect(await getCommitContext("invalid-sha", mergeRepo.cwd)).toBeNull();
     });
   });
 
@@ -863,11 +972,11 @@ describe("merge commit handling", () => {
   });
 
   describe("getCommitContextsBetweenShas with merge commits", () => {
-    it("should include merge commit when path filtering would exclude it", () => {
+    it("should include merge commit when path filtering would exclude it", async () => {
       // The merge node itself adds no file changes, so default simplification
       // would drop it; `--full-history` keeps it for metadata (PR number,
       // branch name) extraction.
-      const result = getCommitContextsBetweenShas(mergeRepo.commits.base, mergeRepo.commits.mergeCommit, {
+      const result = await getCommitContextsBetweenShas(mergeRepo.commits.base, mergeRepo.commits.mergeCommit, {
         includePaths: ["src/**"],
         cwd: mergeRepo.cwd,
       });
@@ -886,9 +995,9 @@ describe("merge commit handling", () => {
       expect(featureCommitResult).toBeDefined();
     });
 
-    it("should not duplicate merge commit if it was already included", () => {
+    it("should not duplicate merge commit if it was already included", async () => {
       // Without path filtering, the merge commit is already included
-      const result = getCommitContextsBetweenShas(mergeRepo.commits.base, mergeRepo.commits.mergeCommit, {
+      const result = await getCommitContextsBetweenShas(mergeRepo.commits.base, mergeRepo.commits.mergeCommit, {
         cwd: mergeRepo.cwd,
       });
 
@@ -909,11 +1018,11 @@ describe("merge commit handling", () => {
       rmSync(multiRepo.cwd, { recursive: true, force: true });
     });
 
-    it("should return in-path merges and drop out-of-path merges across a multi-merge range", () => {
+    it("should return in-path merges and drop out-of-path merges across a multi-merge range", async () => {
       // `--full-history` keeps merges whose contribution arrived via a non-
       // first parent. Their tree equals one parent's, so default simplification
       // would drop them — and with them the issue keys in their branch names.
-      const result = getCommitContextsBetweenShas(multiRepo.commits.base, multiRepo.commits.headMerge, {
+      const result = await getCommitContextsBetweenShas(multiRepo.commits.base, multiRepo.commits.headMerge, {
         includePaths: ["frontend/**", "backend/**"],
         cwd: multiRepo.cwd,
       });
@@ -934,8 +1043,8 @@ describe("merge commit handling", () => {
       expect(branchNames).not.toContain("feature/LIN-300-infra");
     });
 
-    it("should return HEAD merge commit when fromSha === toSha and HEAD is a merge", () => {
-      const result = getCommitContextsBetweenShas(multiRepo.commits.headMerge, multiRepo.commits.headMerge, {
+    it("should return HEAD merge commit when fromSha === toSha and HEAD is a merge", async () => {
+      const result = await getCommitContextsBetweenShas(multiRepo.commits.headMerge, multiRepo.commits.headMerge, {
         includePaths: ["frontend/**", "backend/**"],
         cwd: multiRepo.cwd,
       });
@@ -945,11 +1054,11 @@ describe("merge commit handling", () => {
       expect(headResult?.branchName).toBe("rel/2026-05-06");
     });
 
-    it("should not drift to an unrelated ancestor when fromSha === toSha and HEAD is outside includePaths", () => {
+    it("should not drift to an unrelated ancestor when fromSha === toSha and HEAD is outside includePaths", async () => {
       // `git log -1 <sha> -- <paths>` walks back from <sha> until something
       // matches the pathspec — `--no-walk` makes it return only <sha>, or
       // nothing if <sha> doesn't match.
-      const result = getCommitContextsBetweenShas(multiRepo.commits.merge300, multiRepo.commits.merge300, {
+      const result = await getCommitContextsBetweenShas(multiRepo.commits.merge300, multiRepo.commits.merge300, {
         includePaths: ["frontend/**"],
         cwd: multiRepo.cwd,
       });
@@ -973,14 +1082,14 @@ describe("merge commit handling", () => {
       rmSync(relRepo.cwd, { recursive: true, force: true });
     });
 
-    it("should surface feature merges from inside the rel branch when scanning the resolved first-sync boundary", () => {
+    it("should surface feature merges from inside the rel branch when scanning the resolved first-sync boundary", async () => {
       // Mirrors the customer's first-sync flow: resolveFirstSyncBoundary picks
       // HEAD^1 because HEAD is a merge, then getCommitContextsBetweenShas runs
       // over that range.
       const boundary = resolveFirstSyncBoundary(relRepo.commits.headMerge, relRepo.cwd);
       expect(boundary).not.toBe(relRepo.commits.headMerge);
 
-      const result = getCommitContextsBetweenShas(boundary, relRepo.commits.headMerge, {
+      const result = await getCommitContextsBetweenShas(boundary, relRepo.commits.headMerge, {
         includePaths: ["frontend-nuxt3/**", "backend/**"],
         cwd: relRepo.cwd,
       });
@@ -1005,11 +1114,11 @@ describe("merge commit handling", () => {
       rmSync(repo.cwd, { recursive: true, force: true });
     });
 
-    it("drops a stale-branch merge that delivered no change to the filtered paths", () => {
+    it("drops a stale-branch merge that delivered no change to the filtered paths", async () => {
       // feat/ABC-1-stale edited app-a/ only but merged after app-b/ landed, so
       // `--full-history` keeps its merge under the app-b pathspec. The merge
       // delivered nothing to app-b/, so its subject key must not be attributed.
-      const result = getCommitContextsBetweenShas(repo.commits.base, repo.commits.subjectMerge, {
+      const result = await getCommitContextsBetweenShas(repo.commits.base, repo.commits.subjectMerge, {
         includePaths: ["app-b/**"],
         cwd: repo.cwd,
       });
@@ -1021,10 +1130,10 @@ describe("merge commit handling", () => {
       expect(branchNames).not.toContain("feat/ABC-1-stale");
     });
 
-    it("retains a merge whose key lives only on the subject when it delivered the filtered paths", () => {
+    it("retains a merge whose key lives only on the subject when it delivered the filtered paths", async () => {
       // feat/XYZ-2-impl genuinely edited app-b/ and carries its key only on the
       // merge subject, so dropping the merge would lose the key entirely.
-      const result = getCommitContextsBetweenShas(repo.commits.base, repo.commits.subjectMerge, {
+      const result = await getCommitContextsBetweenShas(repo.commits.base, repo.commits.subjectMerge, {
         includePaths: ["app-b/**"],
         cwd: repo.cwd,
       });
@@ -1036,11 +1145,11 @@ describe("merge commit handling", () => {
       expect(branchNames).toContain("feat/XYZ-2-impl");
     });
 
-    it("still attributes a stale merge to the surface it actually touched", () => {
+    it("still attributes a stale merge to the surface it actually touched", async () => {
       // The same stale merge DID deliver app-a/ changes, so under an app-a filter
       // its subject key is correctly retained — the fix discards leaks, not work.
       // And the app-b-only merge must not leak into the app-a surface.
-      const result = getCommitContextsBetweenShas(repo.commits.base, repo.commits.subjectMerge, {
+      const result = await getCommitContextsBetweenShas(repo.commits.base, repo.commits.subjectMerge, {
         includePaths: ["app-a/**"],
         cwd: repo.cwd,
       });
@@ -1065,18 +1174,18 @@ describe("merge commit handling", () => {
       rmSync(ff.cwd, { recursive: true, force: true });
     });
 
-    it("ignores a stale ref decorating an interior merge commit", () => {
-      const result = getCommitContextsBetweenShas(stale.commits.base, stale.commits.tip, { cwd: stale.cwd });
+    it("ignores a stale ref decorating an interior merge commit", async () => {
+      const result = await getCommitContextsBetweenShas(stale.commits.base, stale.commits.tip, { cwd: stale.cwd });
 
       const interior = result.find((c) => c.sha === stale.commits.downMerge);
       expect(interior).toBeDefined();
       expect(interior?.branchName).toBeNull();
     });
 
-    it("keeps a fast-forwarded feature branch decorating an interior regular commit", () => {
+    it("keeps a fast-forwarded feature branch decorating an interior regular commit", async () => {
       // The key lives only in the branch name (GitLab fast-forward / direct push),
       // so dropping interior decorations here would silently lose the issue.
-      const result = getCommitContextsBetweenShas(ff.commits.base, ff.commits.tip, { cwd: ff.cwd });
+      const result = await getCommitContextsBetweenShas(ff.commits.base, ff.commits.tip, { cwd: ff.cwd });
 
       const interior = result.find((c) => c.sha === ff.commits.feature);
       expect(interior?.branchName).toBe("user/REL-9-feature");

@@ -1,4 +1,4 @@
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync, execSync, spawn } from "node:child_process";
 import type { CommitContext, GitInfo } from "./types";
 import { error as logError, verbose, warn } from "./log";
 
@@ -16,18 +16,18 @@ export function normalizePathspec(pattern: string): string {
  *
  * @see https://git-scm.com/docs/gitglossary#Documentation/gitglossary.txt-aiddefpathspec
  */
-export function buildPathspecArgs(includePaths: string[] | null): string {
+export function buildPathspecArgs(includePaths: string[] | null): string[] {
   if (!includePaths || includePaths.length === 0) {
-    return "";
+    return [];
   }
   const patterns = includePaths
     .map((p) => normalizePathspec(p))
     .filter((p) => p.length > 0)
-    .map((p) => `":(top,glob)${p}"`);
+    .map((p) => `:(top,glob)${p}`);
   if (patterns.length === 0) {
-    return "";
+    return [];
   }
-  return `-- ${patterns.join(" ")}`;
+  return ["--", ...patterns];
 }
 
 /**
@@ -62,33 +62,40 @@ export function assertGitAvailable(cwd: string = process.cwd()): void {
 }
 
 export function getCurrentGitInfo(cwd: string = process.cwd()): GitInfo {
+  let branch: string | null = null;
+  let commit: string | null = null;
+  let message: string | null = null;
+
   try {
-    const branch = execSync("git rev-parse --abbrev-ref HEAD", {
+    branch = execSync("git rev-parse --abbrev-ref HEAD", {
       cwd,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
     })
       .trim()
       .replace(/^HEAD$/, "detached");
+  } catch {}
 
-    const commit = execSync("git rev-parse HEAD", {
+  try {
+    commit = execSync("git rev-parse HEAD", {
       cwd,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
     }).trim();
+  } catch {}
 
-    const message = execSync("git log -1 --pretty=%B", {
+  try {
+    message = execSync("git log -1 --pretty=%B", {
       cwd,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
+      maxBuffer: 10 * 1024 * 1024,
     })
       .trim()
       .replace(/\s+/g, " ");
+  } catch {}
 
-    return { branch, commit, message };
-  } catch {
-    return { branch: null, commit: null, message: null };
-  }
+  return { branch, commit, message };
 }
 
 /**
@@ -359,13 +366,13 @@ function parseCommitChunk(chunk: string): CommitContext {
 /**
  * Returns the commit context for a single commit without path filtering.
  */
-export function getCommitContext(sha: string, cwd: string = process.cwd()): CommitContext | null {
+export async function getCommitContext(sha: string, cwd: string = process.cwd()): Promise<CommitContext | null> {
   if (!SHA_PATTERN.test(sha)) {
     warn(`Invalid commit SHA format "${sha}"`);
     return null;
   }
   try {
-    return runLog(`-1 ${sha}`, cwd)[0] ?? null;
+    return (await runLog(["-1", sha], cwd))[0] ?? null;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     warn(`Failed to read commit ${sha.slice(0, 7)}: ${message}`);
@@ -397,21 +404,65 @@ export function ensureCommitAvailable(sha: string, cwd: string = process.cwd()):
   );
 }
 
-// A wide commit range outgrows Node's 1 MB default; keep a finite ceiling
-// rather than Infinity to bound memory.
-const RUN_LOG_MAX_BUFFER = 256 * 1024 * 1024;
+function runLog(rangeArgs: string[], cwd: string): Promise<CommitContext[]> {
+  const args = ["log", "--format=%H%x1f%B%x1f%D%x1f%P%x1e", ...rangeArgs];
 
-function runLog(rangeArgs: string, cwd: string): CommitContext[] {
-  const output = execSync(`git log --format=%H%x1f%B%x1f%D%x1f%P%x1e ${rangeArgs}`, {
-    cwd,
-    stdio: ["ignore", "pipe", "pipe"],
-    encoding: "utf8",
-    maxBuffer: RUN_LOG_MAX_BUFFER,
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const commits: CommitContext[] = [];
+    let stdoutBuffer = Buffer.alloc(0);
+    let stderrTail = Buffer.alloc(0);
+    let settled = false;
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdoutBuffer = Buffer.concat([stdoutBuffer, chunk]);
+      let separatorIndex = stdoutBuffer.indexOf(0x1e);
+      while (separatorIndex !== -1) {
+        const record = stdoutBuffer.subarray(0, separatorIndex).toString("utf8");
+        stdoutBuffer = stdoutBuffer.subarray(separatorIndex + 1);
+        if (record.trim().length > 0) {
+          commits.push(parseCommitChunk(record));
+        }
+        separatorIndex = stdoutBuffer.indexOf(0x1e);
+      }
+    });
+
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderrTail = Buffer.concat([stderrTail, chunk]).subarray(-4096);
+    });
+
+    const fail = (exitCode: number | null, cause?: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      const stderr = stderrTail.toString("utf8").trim();
+      const details = [
+        `git args: ${JSON.stringify(args)}`,
+        `exit code: ${exitCode ?? "null"}`,
+        cause?.message,
+        `stderr: ${stderr}`,
+      ].filter(Boolean);
+      reject(new Error(details.join("; ")));
+    };
+
+    child.once("error", (error) => fail(child.exitCode, error));
+    child.once("close", (code) => {
+      if (code !== 0) {
+        fail(code);
+        return;
+      }
+      if (settled) {
+        return;
+      }
+      const trailingRecord = stdoutBuffer.toString("utf8");
+      if (trailingRecord.trim().length > 0) {
+        commits.push(parseCommitChunk(trailingRecord));
+      }
+      settled = true;
+      resolve(commits);
+    });
   });
-  return output
-    .split("\x1e")
-    .filter((chunk) => chunk.trim().length > 0)
-    .map(parseCommitChunk);
 }
 
 /**
@@ -426,13 +477,13 @@ function runLog(rangeArgs: string, cwd: string): CommitContext[] {
  * still kept when it actually touched the paths. On an unexpected diff failure,
  * keep the merge rather than drop real work.
  */
-function mergeDeliversToPaths(commit: CommitContext, pathspec: string, cwd: string): boolean {
+function mergeDeliversToPaths(commit: CommitContext, pathspecArgs: string[], cwd: string): boolean {
   const parents = commit.parents ?? [];
   if (parents.length <= 1) {
     return true;
   }
   try {
-    execSync(`git diff --quiet ${parents[0]} ${commit.sha} ${pathspec}`, {
+    execFileSync("git", ["diff", "--quiet", parents[0]!, commit.sha, ...pathspecArgs], {
       cwd,
       stdio: ["ignore", "ignore", "pipe"],
     });
@@ -475,11 +526,11 @@ function mergeDeliversToPaths(commit: CommitContext, pathspec: string, cwd: stri
  * @param options.inspectSingleCommit - When SHAs match, inspect that one commit instead of treating it as an empty range
  * @param options.cwd - Working directory for git commands (defaults to process.cwd())
  */
-export function getCommitContextsBetweenShas(
+export async function getCommitContextsBetweenShas(
   fromSha: string,
   toSha: string,
   options: { includePaths?: string[] | null; inspectSingleCommit?: boolean; cwd?: string } = {},
-): CommitContext[] {
+): Promise<CommitContext[]> {
   const { includePaths = null, inspectSingleCommit = true, cwd = process.cwd() } = options;
 
   if (!SHA_PATTERN.test(fromSha)) {
@@ -492,16 +543,16 @@ export function getCommitContextsBetweenShas(
   }
 
   const inspectingSingleCommit = fromSha === toSha && inspectSingleCommit;
-  const pathspec = buildPathspecArgs(includePaths);
-  const args = [
-    includePaths?.length ? "--full-history" : "",
-    inspectingSingleCommit ? `--no-walk ${toSha}` : `${fromSha}..${toSha}`,
-    pathspec,
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const logged = runLog(args, cwd);
-  const commits = pathspec ? logged.filter((commit) => mergeDeliversToPaths(commit, pathspec, cwd)) : logged;
+  const pathspecArgs = buildPathspecArgs(includePaths);
+  const rangeArgs = [
+    ...(includePaths?.length ? ["--full-history"] : []),
+    ...(inspectingSingleCommit ? ["--no-walk", toSha] : [`${fromSha}..${toSha}`]),
+    ...pathspecArgs,
+  ];
+  const logged = await runLog(rangeArgs, cwd);
+  const commits = pathspecArgs.length
+    ? logged.filter((commit) => mergeDeliversToPaths(commit, pathspecArgs, cwd))
+    : logged;
 
   if (commits.length === 0) {
     if (inspectingSingleCommit) {

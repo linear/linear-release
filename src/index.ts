@@ -313,7 +313,7 @@ async function syncCommand(): Promise<{
     }
   }
 
-  const commits = getCommitContextsBetweenShas(latestSha, currentCommit.commit, {
+  const commits = await getCommitContextsBetweenShas(latestSha, currentCommit.commit, {
     includePaths: effectiveIncludePaths,
     inspectSingleCommit: scanBase.kind !== "base-ref",
   });
