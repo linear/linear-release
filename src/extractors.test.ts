@@ -472,6 +472,112 @@ describe("bracketed identifier in commit subject", () => {
   });
 });
 
+describe("custom issue patterns", () => {
+  const bracketedPattern = /\[([A-Z]+-\d+)\]/gi;
+
+  it.each([
+    ["feat(routing)[ENG-123]: add stop reordering", ["ENG-123"]],
+    ["fix[ENG-123]: handle empty payload", ["ENG-123"]],
+    ["chore(deps)[ENG-7]: bump", ["ENG-7"]],
+    ["feat(mobile)[APP-123]: some commit reason", ["APP-123"]],
+    ["feat(api)![ENG-9]: breaking change", ["ENG-9"]],
+    ["chore[ENG-7][ENG-8]: bump deps", ["ENG-7", "ENG-8"]],
+  ])("extracts bracketed identifiers from %s", (message, expected) => {
+    const result = extractLinearIssueIdentifiersForCommit({ sha: "abc", message }, { issuePattern: bracketedPattern });
+    expect(ids(result)).toEqual(expected);
+    expect(result.every((entry) => entry.source === "issue_pattern")).toBe(true);
+  });
+
+  it("deduplicates custom, magic-word, and built-in subject identifiers", () => {
+    const result = extractLinearIssueIdentifiersForCommit(
+      { sha: "abc", message: "[LIN-1], [LIN-2] and [LIN-3] thing, Closes LIN-4, [LIN-5]" },
+      { issuePattern: bracketedPattern },
+    );
+    expect(ids(result).sort()).toEqual(["LIN-1", "LIN-2", "LIN-3", "LIN-4", "LIN-5"]);
+  });
+
+  it("normalizes lowercase identifiers with a case-insensitive pattern", () => {
+    expect(
+      ids(
+        extractLinearIssueIdentifiersForCommit(
+          { sha: "abc", message: "feat(api)[eng-123]: x" },
+          { issuePattern: /\[([A-Z]+-\d+)\]/gi },
+        ),
+      ),
+    ).toEqual(["ENG-123"]);
+  });
+
+  it("rejects leading-zero and malformed captured identifiers", () => {
+    expect(
+      ids(
+        extractLinearIssueIdentifiersForCommit(
+          { sha: "abc", message: "feat[ENG-0045]: x" },
+          { issuePattern: bracketedPattern },
+        ),
+      ),
+    ).toEqual([]);
+    expect(
+      ids(
+        extractLinearIssueIdentifiersForCommit(
+          { sha: "abc", message: "chore(deps)[notanid]: bump" },
+          { issuePattern: bracketedPattern },
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it("only scans the subject", () => {
+    expect(
+      ids(
+        extractLinearIssueIdentifiersForCommit(
+          { sha: "abc", message: "chore: bump\n\n[ENG-123] in body" },
+          { issuePattern: bracketedPattern },
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it("treats absent and null options identically", () => {
+    const commit = { sha: "abc", message: "chore: bump" };
+    expect(extractLinearIssueIdentifiersForCommit(commit)).toEqual(
+      extractLinearIssueIdentifiersForCommit(commit, { issuePattern: null }),
+    );
+  });
+
+  it("keeps branch-name source when the custom pattern finds the same identifier", () => {
+    const result = extractLinearIssueIdentifiersForCommit(
+      { sha: "abc", branchName: "feature/ENG-99-x", message: "feat[ENG-99]: y" },
+      { issuePattern: bracketedPattern },
+    );
+    expect(result).toEqual([{ identifier: "ENG-99", source: "branch_name" }]);
+  });
+
+  it("extracts bare identifiers globally", () => {
+    expect(
+      ids(
+        extractLinearIssueIdentifiersForCommit(
+          { sha: "abc", message: "feat(api): ENG-621 handle empty payload" },
+          { issuePattern: /\b([A-Z]+-\d+)\b/gi },
+        ),
+      ),
+    ).toEqual(["ENG-621"]);
+    expect(
+      ids(
+        extractLinearIssueIdentifiersForCommit(
+          { sha: "abc", message: "fix(scope): color button red DEV-123 DEV-124" },
+          { issuePattern: /\b([A-Z]+-\d+)\b/gi },
+        ),
+      ),
+    ).toEqual(["DEV-123", "DEV-124"]);
+  });
+
+  it("handles zero-width-capable patterns without hanging", () => {
+    expect(
+      ids(extractLinearIssueIdentifiersForCommit({ sha: "abc", message: "chore: bump" }, { issuePattern: /(\d*)/gi })),
+    ).toEqual([]);
+  });
+});
+
 describe("revert branch handling", () => {
   it("blocks extraction from merge commit with revert branch name", () => {
     const result = extractLinearIssueIdentifiersForCommit({

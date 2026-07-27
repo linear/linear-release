@@ -4,12 +4,13 @@ import {
   extractRevertedIssueIdentifiersForCommit,
   getEffectiveSubject,
 } from "./extractors";
-import { verbose } from "./log";
+import { verbose, warn } from "./log";
 import { CommitContext, DebugSink, IssueReference, PullRequestSource } from "./types";
 
 export type ScanOptions = {
   includePaths?: string[] | null;
   includeSubjects?: string | null;
+  issuePattern?: string | null;
 };
 
 /**
@@ -26,8 +27,12 @@ export function scanCommits(
   prNumbers: number[];
   debugSink: DebugSink;
 } {
-  const { includePaths = null, includeSubjects = null } = options;
+  const { includePaths = null, includeSubjects = null, issuePattern = null } = options;
   const subjectRegex = includeSubjects ? new RegExp(includeSubjects) : null;
+  const issuePatternRegex = issuePattern ? new RegExp(issuePattern, "gi") : null;
+  const issuePatternSubjectRegex = issuePattern ? new RegExp(issuePattern, "i") : null;
+  let issuePatternMatchedSubject = false;
+  let issuePatternExtractedIdentifier = false;
   const lastAction = new Map<string, "added" | "reverted">();
   const addedRefs = new Map<string, IssueReference>();
   const revertedRefs = new Map<string, IssueReference>();
@@ -40,6 +45,7 @@ export function scanCommits(
     pullRequests: [],
     includePaths,
     includeSubjects,
+    issuePattern,
   };
 
   for (const commit of commits) {
@@ -52,6 +58,10 @@ export function scanCommits(
     }
 
     debugSink.inspectedShas.push(commit.sha);
+
+    if (issuePatternSubjectRegex?.test(getEffectiveSubject(commit.message))) {
+      issuePatternMatchedSubject = true;
+    }
 
     for (const { identifier, source } of extractRevertedIssueIdentifiersForCommit(commit)) {
       if (!debugSink.revertedIssues[identifier]) {
@@ -68,7 +78,12 @@ export function scanCommits(
       verbose(`Detected reverted issue key ${identifier} from commit ${commit.sha}`);
     }
 
-    for (const { identifier, source } of extractLinearIssueIdentifiersForCommit(commit)) {
+    for (const { identifier, source } of extractLinearIssueIdentifiersForCommit(commit, {
+      issuePattern: issuePatternRegex,
+    })) {
+      if (source === "issue_pattern") {
+        issuePatternExtractedIdentifier = true;
+      }
       if (!debugSink.issues[identifier]) {
         debugSink.issues[identifier] = [];
       }
@@ -97,6 +112,12 @@ export function scanCommits(
         verbose(`Found pull request number ${prNumber} in commit ${commit.sha}`);
       }
     }
+  }
+
+  if (issuePattern && issuePatternMatchedSubject && !issuePatternExtractedIdentifier) {
+    warn(
+      "--issue-pattern matched commit subjects but group 1 never contained a valid identifier like ENG-123; likely the capture groups are misplaced.",
+    );
   }
 
   const issueReferences: IssueReference[] = [];

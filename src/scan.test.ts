@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as log from "./log";
 import { scanCommits } from "./scan";
 import { CommitContext } from "./types";
 
@@ -226,6 +227,50 @@ describe("scanCommits", () => {
       const result = scanCommits(commits, { includeSubjects: "^(feat|fix):" });
       expect(ids(result.issueReferences)).toEqual([]);
       expect(ids(result.revertedIssueReferences)).toEqual([]);
+    });
+  });
+
+  describe("--issue-pattern", () => {
+    it("compiles the string pattern globally and case-insensitively", () => {
+      const result = scanCommits(
+        [
+          { sha: "c1", message: "feat(api)[eng-123]: x" },
+          { sha: "c2", message: "fix: DEV-123 DEV-124" },
+        ],
+        { issuePattern: "\\b([A-Z]+-\\d+)\\b" },
+      );
+      expect(ids(result.issueReferences)).toEqual(["DEV-123", "DEV-124", "ENG-123"]);
+    });
+
+    it("records the raw pattern on the debug sink", () => {
+      expect(scanCommits([], { issuePattern: "\\[([A-Z]+-\\d+)\\]" }).debugSink.issuePattern).toBe(
+        "\\[([A-Z]+-\\d+)\\]",
+      );
+      expect(scanCommits([], {}).debugSink.issuePattern).toBeNull();
+    });
+
+    it("does not scan issue patterns on commits excluded by --include-subjects", () => {
+      const result = scanCommits([{ sha: "c1", message: "chore[ENG-123]: bump" }], {
+        includeSubjects: "^feat:",
+        issuePattern: "\\[([A-Z]+-\\d+)\\]",
+      });
+      expect(result.issueReferences).toEqual([]);
+      expect(result.debugSink.inspectedShas).toEqual([]);
+    });
+
+    it("warns when the pattern matches but group 1 has no valid identifier", () => {
+      const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
+      scanCommits([{ sha: "c1", message: "chore[notanid]: bump" }], { issuePattern: "\\[(\\w+)\\]" });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("group 1"));
+      warn.mockRestore();
+    });
+
+    it("does not warn when the flag is unset", () => {
+      const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
+      scanCommits([{ sha: "c1", message: "chore[notanid]: bump" }]);
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
     });
   });
 });

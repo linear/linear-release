@@ -66,6 +66,7 @@ Options:
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
   --include-subjects=<regex> Filter commits whose subject (first line) matches the regex
+  --issue-pattern=<regex>    Extract issue IDs captured by group 1 from commit subjects (e.g. "\\[([A-Z]+-\\d+)\\]")
   --link <URL|Label=URL>       Add a link to the targeted release (repeatable)
   --document <Title=content> Attach a document to the release (repeatable, Title required)
   --document-file <[Title=]path> Attach a document from a file (title inferred from basename if omitted; "-" for stdin requires Title=-; repeatable)
@@ -124,6 +125,7 @@ const {
   baseRef,
   includePaths,
   includeSubjects,
+  issuePattern,
   links,
   documents: documentSpecs,
   releaseNotes: releaseNotesSpec,
@@ -364,6 +366,7 @@ async function syncCommand(): Promise<{
   const { issueReferences, revertedIssueReferences, prNumbers, debugSink } = scanCommits(commits, {
     includePaths: effectiveIncludePaths,
     includeSubjects,
+    issuePattern,
   });
 
   verbose(`Debug sink: ${JSON.stringify(debugSink, null, 2)}`);

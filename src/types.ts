@@ -96,7 +96,7 @@ export type IssueReference = {
 // Debug sink types
 export type IssueSource = {
   sha: string;
-  source: "branch_name" | "commit_message";
+  source: "branch_name" | "commit_message" | "issue_pattern";
   value: string; // The actual branch name or commit message
 };
 
@@ -113,4 +113,5 @@ export type DebugSink = {
   pullRequests: PullRequestSource[]; // PR numbers found in commits
   includePaths: string[] | null; // Path filters applied during commit scanning
   includeSubjects: string | null; // Subject regex source applied during scanning
+  issuePattern: string | null; // Subject identifier extraction regex source
 };
