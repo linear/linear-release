@@ -11,6 +11,7 @@ import {
   extractBranchNameFromMergeMessage,
   getCommitContext,
   getCommitContextsBetweenShas,
+  countCommitsInRange,
   getCurrentGitInfo,
   getCommitParents,
   getRemoteUrl,
@@ -1220,6 +1221,41 @@ describe("assertGitAvailable", () => {
       expect(() => assertGitAvailable(repo.cwd)).toThrow(/git.*on PATH/);
     } finally {
       process.env.PATH = originalPath;
+      rmSync(repo.cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("countCommitsInRange", () => {
+  it("counts commits exclusive of the from SHA", () => {
+    const repo = initTempRepo({
+      prefix: "linear-release-count-",
+      dirs: ["src"],
+      seedFile: { path: "src/file.txt", content: "one" },
+    });
+    try {
+      writeFileSync(join(repo.cwd, "src", "file.txt"), "two");
+      runGit('commit -am "second"', repo.cwd);
+      writeFileSync(join(repo.cwd, "src", "file.txt"), "three");
+      runGit('commit -am "third"', repo.cwd);
+      const head = runGit("rev-parse HEAD", repo.cwd);
+
+      expect(countCommitsInRange(repo.base, head, repo.cwd)).toBe(2);
+      expect(countCommitsInRange(head, head, repo.cwd)).toBe(0);
+    } finally {
+      rmSync(repo.cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("returns null when the range cannot be resolved", () => {
+    const repo = initTempRepo({
+      prefix: "linear-release-count-invalid-",
+      dirs: ["src"],
+      seedFile: { path: "src/file.txt", content: "one" },
+    });
+    try {
+      expect(countCommitsInRange("0".repeat(40), repo.base, repo.cwd)).toBeNull();
+    } finally {
       rmSync(repo.cwd, { recursive: true, force: true });
     }
   });

@@ -10,6 +10,37 @@ export type ScanBase =
 
 export const BROAD_SCAN_COMMIT_THRESHOLD = 100;
 
+export const SCAN_COMMIT_HARD_LIMIT = 10_000;
+
+/**
+ * Judges a scan range's commit count before the (potentially heavy) log scan
+ * runs. Automatic ranges above the hard limit degrade to current-commit-only —
+ * an anchor that far back is stale or from another repository, and syncing it
+ * would link months of shipped work to one release. Explicit --base-ref ranges
+ * are trusted but warned. A null count (couldn't determine) never blocks.
+ */
+export function evaluateScanRangeSize(
+  commitCount: number | null,
+  scanBase: ScanBase,
+): { degradeToCurrentCommit: boolean; warning?: string } {
+  if (commitCount === null || commitCount <= SCAN_COMMIT_HARD_LIMIT) {
+    return { degradeToCurrentCommit: false };
+  }
+
+  if (scanBase.kind === "base-ref") {
+    return {
+      degradeToCurrentCommit: false,
+      warning: `Scanning ${commitCount} commits from --base-ref ${scanBase.ref} (${scanBase.sha.slice(0, 7)}), above the ${SCAN_COMMIT_HARD_LIMIT}-commit safety limit. Proceeding because this range was explicitly requested.`,
+    };
+  }
+
+  const range = scanBase.kind === "release" ? `release anchor ${scanBase.sha.slice(0, 7)}` : "the first-sync fallback";
+  return {
+    degradeToCurrentCommit: true,
+    warning: `Scan range from ${range} spans ${commitCount} commits, above the ${SCAN_COMMIT_HARD_LIMIT}-commit safety limit — the anchor is likely stale or from another repository. Syncing only the current commit. Pass --base-ref to scan an explicit range.`,
+  };
+}
+
 export function selectAutomaticScanBase(
   candidates: Release[],
   currentSha: string,
