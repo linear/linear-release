@@ -33,6 +33,8 @@ jobs:
   linear-release-sync-main:
     docker:
       - image: cimg/base:current
+    environment:
+      LINEAR_RELEASE_REPOSITORY_PROVIDER: << pipeline.project.type >>
     steps:
       - checkout
       - run:
@@ -47,6 +49,8 @@ jobs:
   linear-release-sync-release:
     docker:
       - image: cimg/base:current
+    environment:
+      LINEAR_RELEASE_REPOSITORY_PROVIDER: << pipeline.project.type >>
     steps:
       - checkout
       - run:

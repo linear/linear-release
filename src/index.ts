@@ -5,7 +5,9 @@ import {
   ensureCommitAvailable,
   getCommitContextsBetweenShas,
   getCurrentGitInfo,
-  getRepoInfo,
+  getRemoteUrl,
+  parseRepoUrl,
+  resolveRepoInfo,
   resolveCommitRef,
   verifyAncestorReachable,
 } from "./git";
@@ -26,7 +28,7 @@ import {
   AccessKeyUpdateByPipelineResponse,
   DebugSink,
   IssueReference,
-  RepoInfo,
+  ResolvedRepoInfo,
 } from "./types";
 import {
   getCLIWarnings,
@@ -41,6 +43,7 @@ import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
 import { withRetry } from "./retry";
 import { getCliVersion } from "./version";
+import { ConfigurationError } from "./ci-env";
 
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
   console.log(getCliVersion());
@@ -81,6 +84,7 @@ Options:
 
 Environment:
   LINEAR_ACCESS_KEY          Pipeline access key (required)
+  LINEAR_RELEASE_REPOSITORY_PROVIDER  Force repository provider: github|gitlab|bitbucket
 
 Examples:
   linear-release sync
@@ -250,6 +254,27 @@ async function apiRequest<T>(query: string, variables?: Record<string, unknown>)
   return withRetry(() => linearClient.client.rawRequest(query, variables)) as Promise<T>;
 }
 
+function getResolvedRepoInfo(): ResolvedRepoInfo | null {
+  const remoteUrl = getRemoteUrl();
+  if (!remoteUrl) {
+    return null;
+  }
+  const parsed = parseRepoUrl(remoteUrl);
+  if (!parsed) {
+    warn(`Could not parse remote URL "${remoteUrl}"; syncing without repository information.`);
+    return null;
+  }
+  const resolved = resolveRepoInfo(parsed, process.env);
+  if (!resolved) {
+    throw new ConfigurationError(
+      `Could not determine the VCS provider for remote host "${parsed.host}".\nSet LINEAR_RELEASE_REPOSITORY_PROVIDER=github|gitlab|bitbucket in your CI environment.`,
+      "unknown-provider",
+      { host: parsed.host },
+    );
+  }
+  return resolved;
+}
+
 async function syncCommand(): Promise<{
   release: { id: string; name: string; version?: string; url?: string };
 } | null> {
@@ -368,7 +393,7 @@ async function syncCommand(): Promise<{
     info(`Reverted issue keys: ${revertedIssueReferences.map((f) => f.identifier).join(", ")}`);
   }
 
-  const repoInfo = getRepoInfo();
+  const repoInfo = getResolvedRepoInfo();
 
   const issueIds = issueReferences.map((f) => f.identifier);
   const parts: string[] = [];
@@ -584,7 +609,7 @@ async function syncRelease(
   issueReferences: IssueReference[],
   revertedIssueReferences: IssueReference[],
   prNumbers: number[],
-  repoInfo: RepoInfo | null,
+  repoInfo: ResolvedRepoInfo | null,
   debugSink: DebugSink,
   releaseLinks: ReleaseLink[],
   releaseDocuments: ReleaseDocument[],
@@ -801,6 +826,14 @@ timeout.unref();
 
 main()
   .catch((e) => {
+    if (e instanceof ConfigurationError) {
+      if (jsonOutput) {
+        process.stderr.write(`${JSON.stringify({ error: e.code, ...e.details })}\n`);
+      } else {
+        error(`Error: ${e.message}`);
+      }
+      process.exit(2);
+    }
     error(`Error: ${e.message}`);
     process.exit(1);
   })

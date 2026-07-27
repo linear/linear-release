@@ -77,10 +77,24 @@ export type GitInfo = {
   message: string | null;
 };
 
+export type RepositoryProvider = "github" | "gitlab" | "bitbucket";
+
 export type RepoInfo = {
   owner: string | null;
   name: string | null;
-  provider: string | null;
+  provider: RepositoryProvider | null;
+  url: string | null;
+  host: string;
+  port: string | null;
+  authority: string;
+  path: string;
+  scheme: "http" | "https" | "ssh";
+};
+
+export type ResolvedRepoInfo = {
+  owner: string | null;
+  name: string | null;
+  provider: RepositoryProvider;
   url: string | null;
 };
 

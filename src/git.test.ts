@@ -12,12 +12,14 @@ import {
   getCommitContext,
   getCommitContextsBetweenShas,
   getCommitParents,
-  getRepoInfo,
+  getRemoteUrl,
   isAncestor,
   normalizePathspec,
   parseRepoUrl,
+  resolveRepoInfo,
   resolveFirstSyncBoundary,
 } from "./git";
+import { ConfigurationError } from "./ci-env";
 
 describe("normalizePathspec", () => {
   it("should strip leading ./", () => {
@@ -128,14 +130,18 @@ describe("extractBranchName", () => {
   });
 });
 
-describe("getRepoInfo", () => {
+describe("repository remote resolution", () => {
   it("should return the repo info", () => {
-    const result = getRepoInfo();
-    expect(result).toBeDefined();
-    expect(result?.owner).toBe("linear");
-    expect(result?.name).toBe("linear-release");
-    expect(result?.provider).toBe("github");
-    expect(result?.url).toBe("https://github.com/linear/linear-release");
+    const remoteUrl = getRemoteUrl();
+    expect(remoteUrl).toBeDefined();
+    const parsed = parseRepoUrl(remoteUrl!);
+    expect(parsed).toBeDefined();
+    expect(resolveRepoInfo(parsed!)).toEqual({
+      owner: "linear",
+      name: "linear-release",
+      provider: "github",
+      url: "https://github.com/linear/linear-release",
+    });
   });
 });
 
@@ -143,7 +149,7 @@ describe("parseRepoUrl", () => {
   describe("HTTPS URLs", () => {
     it("should parse github.com HTTPS URL", () => {
       const result = parseRepoUrl("https://github.com/linear/linear-app.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "linear",
         name: "linear-app",
         provider: "github",
@@ -153,7 +159,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse github.com HTTPS URL without .git suffix", () => {
       const result = parseRepoUrl("https://github.com/linear/linear-app");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "linear",
         name: "linear-app",
         provider: "github",
@@ -163,7 +169,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse gitlab.com HTTPS URL", () => {
       const result = parseRepoUrl("https://gitlab.com/myorg/myrepo.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "myorg",
         name: "myrepo",
         provider: "gitlab",
@@ -173,7 +179,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse GitHub Enterprise HTTPS URL", () => {
       const result = parseRepoUrl("https://github.mycompany.com/engineering/platform.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "engineering",
         name: "platform",
         provider: "github",
@@ -183,7 +189,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse self-hosted GitLab HTTPS URL", () => {
       const result = parseRepoUrl("https://gitlab.internal.io/team/service.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "team",
         name: "service",
         provider: "gitlab",
@@ -193,7 +199,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse gitlab.com HTTPS URL with nested groups", () => {
       const result = parseRepoUrl("https://gitlab.com/my-org/my-group/my-repo.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "my-org",
         name: "my-group/my-repo",
         provider: "gitlab",
@@ -203,7 +209,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse gitlab.com HTTPS URL with deeply nested groups", () => {
       const result = parseRepoUrl("https://gitlab.com/org/group/subgroup/repo.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "org",
         name: "group/subgroup/repo",
         provider: "gitlab",
@@ -213,7 +219,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse self-hosted GitLab HTTPS URL with nested groups and no .git suffix", () => {
       const result = parseRepoUrl("https://gitlab.internal.io/team/platform/service");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "team",
         name: "platform/service",
         provider: "gitlab",
@@ -223,7 +229,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse bitbucket.org HTTPS URL", () => {
       const result = parseRepoUrl("https://bitbucket.org/myorg/myrepo.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "myorg",
         name: "myrepo",
         provider: "bitbucket",
@@ -233,7 +239,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse self-hosted Bitbucket HTTPS URL", () => {
       const result = parseRepoUrl("https://bitbucket.mycompany.com/team/service.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "team",
         name: "service",
         provider: "bitbucket",
@@ -243,7 +249,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse HTTPS URL with credentials", () => {
       const result = parseRepoUrl("https://token@github.com/linear/linear-app.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "linear",
         name: "linear-app",
         provider: "github",
@@ -255,7 +261,7 @@ describe("parseRepoUrl", () => {
   describe("SSH URLs", () => {
     it("should parse github.com SSH URL", () => {
       const result = parseRepoUrl("git@github.com:linear/linear-app.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "linear",
         name: "linear-app",
         provider: "github",
@@ -265,7 +271,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse github.com SSH URL without .git suffix", () => {
       const result = parseRepoUrl("git@github.com:linear/linear-app");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "linear",
         name: "linear-app",
         provider: "github",
@@ -275,7 +281,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse gitlab.com SSH URL", () => {
       const result = parseRepoUrl("git@gitlab.com:myorg/myrepo.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "myorg",
         name: "myrepo",
         provider: "gitlab",
@@ -285,7 +291,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse GitHub Enterprise SSH URL", () => {
       const result = parseRepoUrl("git@github.mycompany.com:engineering/platform.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "engineering",
         name: "platform",
         provider: "github",
@@ -295,7 +301,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse self-hosted GitLab SSH URL", () => {
       const result = parseRepoUrl("git@gitlab.internal.io:team/service.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "team",
         name: "service",
         provider: "gitlab",
@@ -305,7 +311,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse gitlab.com SSH URL with nested groups", () => {
       const result = parseRepoUrl("git@gitlab.com:my-org/my-group/my-repo.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "my-org",
         name: "my-group/my-repo",
         provider: "gitlab",
@@ -315,7 +321,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse gitlab.com SSH URL with deeply nested groups", () => {
       const result = parseRepoUrl("git@gitlab.com:org/group/subgroup/repo.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "org",
         name: "group/subgroup/repo",
         provider: "gitlab",
@@ -325,7 +331,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse bitbucket.org SSH URL", () => {
       const result = parseRepoUrl("git@bitbucket.org:myorg/myrepo.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "myorg",
         name: "myrepo",
         provider: "bitbucket",
@@ -335,7 +341,7 @@ describe("parseRepoUrl", () => {
 
     it("should parse self-hosted Bitbucket SSH URL", () => {
       const result = parseRepoUrl("git@bitbucket.mycompany.com:team/service.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "team",
         name: "service",
         provider: "bitbucket",
@@ -347,7 +353,7 @@ describe("parseRepoUrl", () => {
   describe("GitHub Enterprise Cloud (*.ghe.com)", () => {
     it("should detect github provider for a *.ghe.com host", () => {
       const result = parseRepoUrl("https://acme.ghe.com/engineering/platform.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "engineering",
         name: "platform",
         provider: "github",
@@ -376,7 +382,7 @@ describe("parseRepoUrl", () => {
   describe("unknown providers", () => {
     it("should return null provider for unknown hosts", () => {
       const result = parseRepoUrl("https://example.com/myorg/myrepo.git");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         owner: "myorg",
         name: "myrepo",
         provider: null,
@@ -387,6 +393,245 @@ describe("parseRepoUrl", () => {
     it("should return null for unrecognized URL formats", () => {
       expect(parseRepoUrl("not-a-url")).toBeNull();
       expect(parseRepoUrl("")).toBeNull();
+    });
+  });
+});
+
+describe("repository provider resolution", () => {
+  function parsed(url: string) {
+    const result = parseRepoUrl(url);
+    expect(result).not.toBeNull();
+    return result!;
+  }
+
+  it("applies override before hostname and CI detection", () => {
+    const remote = parsed("https://github.com/linear/linear-release.git");
+    expect(
+      resolveRepoInfo(remote, {
+        LINEAR_RELEASE_REPOSITORY_PROVIDER: " GitLab ",
+        GITHUB_ACTIONS: "true",
+        GITHUB_SERVER_URL: "https://github.com",
+        GITHUB_REPOSITORY: "linear/linear-release",
+      }),
+    ).toEqual({
+      owner: "linear",
+      name: "linear-release",
+      provider: "gitlab",
+      url: "https://github.com/linear/linear-release",
+    });
+  });
+
+  it("applies hostname detection before CI detection", () => {
+    const remote = parsed("https://github.com/linear/linear-release.git");
+    expect(
+      resolveRepoInfo(remote, {
+        GITLAB_CI: "true",
+        CI_SERVER_HOST: "github.com",
+        CI_PROJECT_PATH: "linear/linear-release",
+      })?.provider,
+    ).toBe("github");
+  });
+
+  it("uses CI detection when the hostname is unknown", () => {
+    const remote = parsed("https://git.example.com/linear/linear-release.git");
+    expect(
+      resolveRepoInfo(remote, {
+        GITHUB_ACTIONS: "true",
+        GITHUB_SERVER_URL: "https://git.example.com",
+        GITHUB_REPOSITORY: "linear/linear-release",
+      }),
+    ).toEqual({
+      owner: "linear",
+      name: "linear-release",
+      provider: "github",
+      url: "https://git.example.com/linear/linear-release",
+    });
+  });
+
+  it("rejects an invalid override", () => {
+    const remote = parsed("https://github.com/linear/linear-release.git");
+    expect(() => resolveRepoInfo(remote, { LINEAR_RELEASE_REPOSITORY_PROVIDER: "gitea" })).toThrow(ConfigurationError);
+    try {
+      resolveRepoInfo(remote, { LINEAR_RELEASE_REPOSITORY_PROVIDER: "gitea" });
+    } catch (error) {
+      expect(error).toMatchObject({ code: "invalid-provider-override" });
+      expect((error as Error).message).toContain("github, gitlab, or bitbucket");
+    }
+  });
+
+  it("preserves legacy ambiguous-host precedence", () => {
+    const remote = parsed("https://gitlab-github.example/owner/repo.git");
+    expect(resolveRepoInfo(remote, {})?.provider).toBe("gitlab");
+  });
+
+  it("returns null when every detection tier misses", () => {
+    expect(resolveRepoInfo(parsed("https://git.example.com/owner/repo.git"), {})).toBeNull();
+  });
+
+  it("keeps nested GitLab repository identity byte-identical under GitLab CI", () => {
+    const remote = parsed("https://gitlab.com/org/group/subgroup/repo.git");
+    expect(
+      resolveRepoInfo(remote, {
+        GITLAB_CI: "true",
+        CI_SERVER_HOST: "gitlab.com",
+        CI_PROJECT_PATH: "org/group/subgroup/repo",
+        CI_PROJECT_NAMESPACE: "org/group/subgroup",
+        CI_PROJECT_URL: "https://gitlab.com/org/group/subgroup/repo",
+      }),
+    ).toMatchInlineSnapshot(`
+      {
+        "name": "group/subgroup/repo",
+        "owner": "org",
+        "provider": "gitlab",
+        "url": "https://gitlab.com/org/group/subgroup/repo",
+      }
+    `);
+  });
+});
+
+describe("repository host normalization", () => {
+  it("normalizes uppercase and trailing-dot hosts for matching", () => {
+    const result = parseRepoUrl("https://GITHUB.COM./linear/linear-release.git");
+    expect(result).toMatchObject({
+      host: "github.com",
+      provider: "github",
+      authority: "GITHUB.COM.",
+      url: "https://GITHUB.COM./linear/linear-release",
+    });
+  });
+
+  it("matches a GHE host with a port and retains the web authority", () => {
+    const result = parseRepoUrl("https://tenant.ghe.com:8443/owner/repo.git");
+    expect(result).toMatchObject({
+      host: "tenant.ghe.com",
+      port: "8443",
+      provider: "github",
+      url: "https://tenant.ghe.com:8443/owner/repo",
+    });
+  });
+
+  it("normalizes bracketed IPv6 hosts and separates the port", () => {
+    const result = parseRepoUrl("https://user@[2001:DB8::1]:8443/owner/repo.git");
+    expect(result).toMatchObject({
+      host: "2001:db8::1",
+      port: "8443",
+      authority: "[2001:DB8::1]:8443",
+      provider: null,
+      url: "https://[2001:DB8::1]:8443/owner/repo",
+    });
+  });
+
+  it("strips userinfo from matching and web URLs", () => {
+    const result = parseRepoUrl("https://user:token@gitlab.example.com/owner/repo.git");
+    expect(result).toMatchObject({
+      host: "gitlab.example.com",
+      provider: "gitlab",
+      url: "https://gitlab.example.com/owner/repo",
+    });
+  });
+});
+
+describe("ssh:// repository URLs", () => {
+  it("parses ssh:// without a port", () => {
+    expect(parseRepoUrl("ssh://git@gitlab.example.com/org/repo.git")).toMatchObject({
+      owner: "org",
+      name: "repo",
+      provider: "gitlab",
+      host: "gitlab.example.com",
+      port: null,
+      scheme: "ssh",
+      url: "https://gitlab.example.com/org/repo",
+    });
+  });
+
+  it("drops the SSH port from the web URL", () => {
+    expect(parseRepoUrl("ssh://git@gitlab.example.com:2222/org/group/repo.git")).toMatchObject({
+      owner: "org",
+      name: "group/repo",
+      provider: "gitlab",
+      host: "gitlab.example.com",
+      port: "2222",
+      scheme: "ssh",
+      url: "https://gitlab.example.com/org/group/repo",
+    });
+  });
+});
+
+describe("Bitbucket Server /scm/ paths", () => {
+  function resolved(url: string, env: Record<string, string | undefined> = {}) {
+    const parsed = parseRepoUrl(url);
+    expect(parsed).not.toBeNull();
+    return resolveRepoInfo(parsed!, env);
+  }
+
+  it("shifts a three-segment HTTPS path", () => {
+    expect(resolved("https://bitbucket.example.com/scm/PROJ/repo.git")).toEqual({
+      owner: "PROJ",
+      name: "repo",
+      provider: "bitbucket",
+      url: "https://bitbucket.example.com/PROJ/repo",
+    });
+  });
+
+  it("does not shift a two-segment path", () => {
+    expect(resolved("https://bitbucket.example.com/scm/repo.git")).toEqual({
+      owner: "scm",
+      name: "repo",
+      provider: "bitbucket",
+      url: "https://bitbucket.example.com/scm/repo",
+    });
+  });
+
+  it("does not shift bitbucket.org paths", () => {
+    expect(resolved("https://bitbucket.org/scm/PROJ/repo.git")).toEqual({
+      owner: "scm",
+      name: "PROJ/repo",
+      provider: "bitbucket",
+      url: "https://bitbucket.org/scm/PROJ/repo",
+    });
+  });
+
+  it("does not shift scp-style SSH paths", () => {
+    expect(resolved("git@bitbucket.example.com:scm/PROJ/repo.git")).toEqual({
+      owner: "scm",
+      name: "PROJ/repo",
+      provider: "bitbucket",
+      url: "https://bitbucket.example.com/scm/PROJ/repo",
+    });
+  });
+
+  it("does not shift ssh:// paths", () => {
+    expect(
+      resolved("ssh://git@vcs.example.com/scm/PROJ/repo.git", {
+        LINEAR_RELEASE_REPOSITORY_PROVIDER: "bitbucket",
+      }),
+    ).toEqual({
+      owner: "scm",
+      name: "PROJ/repo",
+      provider: "bitbucket",
+      url: "https://vcs.example.com/scm/PROJ/repo",
+    });
+  });
+
+  it("does not shift paths resolved to a non-Bitbucket provider", () => {
+    expect(resolved("https://github.example.com/scm/PROJ/repo.git")).toEqual({
+      owner: "scm",
+      name: "PROJ/repo",
+      provider: "github",
+      url: "https://github.example.com/scm/PROJ/repo",
+    });
+  });
+
+  it("shifts after an override resolves a custom host to Bitbucket", () => {
+    expect(
+      resolved("https://vcs.example.com/scm/PROJ/repo.git", {
+        LINEAR_RELEASE_REPOSITORY_PROVIDER: "bitbucket",
+      }),
+    ).toEqual({
+      owner: "PROJ",
+      name: "repo",
+      provider: "bitbucket",
+      url: "https://vcs.example.com/PROJ/repo",
     });
   });
 });
