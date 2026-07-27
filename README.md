@@ -143,18 +143,12 @@ linear-release update --stage="in review" --name="Release 1.2.0"
 
 ### Environment Variables
 
-| Variable                             | Required | Description                                                                                 |
-| ------------------------------------ | -------- | ------------------------------------------------------------------------------------------- |
-| `LINEAR_ACCESS_KEY`                  | Yes      | Pipeline access key from Linear                                                             |
-| `LINEAR_RELEASE_REPOSITORY_PROVIDER` | No       | Force repository provider detection: `github`, `gitlab`, or `bitbucket` (case-insensitive). |
+| Variable              | Required | Description                                                      |
+| --------------------- | -------- | ---------------------------------------------------------------- |
+| `LINEAR_ACCESS_KEY`   | Yes      | Pipeline access key from Linear                                  |
+| `LINEAR_VCS_PROVIDER` | No       | Override VCS provider detection: `github`, `gitlab`, `bitbucket` |
 
-### Provider detection
-
-`sync` determines the repository provider from `LINEAR_RELEASE_REPOSITORY_PROVIDER` if set, then the remote hostname, then the GitLab CI environment (`GITLAB_CI` with a matching `CI_SERVER_HOST` or `CI_PROJECT_PATH`) — so self-hosted GitLab on a custom domain works without configuration. If none of these resolve, `sync` stops before making a mutation and exits with code `2` (other errors keep code `1`); with `--json` the error on stderr includes a machine-readable code such as `{"error":"unknown-provider","host":"git.example.com"}`. Set the override for other self-hosted providers on custom domains:
-
-```bash
-LINEAR_RELEASE_REPOSITORY_PROVIDER=gitlab linear-release sync
-```
+The repository provider is detected automatically from the remote hostname and, on GitLab CI, from the job environment — self-hosted GitLab on a custom domain needs no configuration. `LINEAR_VCS_PROVIDER` covers the setups where neither signal can identify the host, such as self-hosted GitHub Enterprise on a custom domain or CI platforms that don't expose the provider. When the provider can't be determined, `sync` fails before syncing rather than record repository data Linear can't use; these configuration errors exit with code `2` so a wrapper can tell a permanent misconfiguration from a transient failure.
 
 ### CLI Options
 

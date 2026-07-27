@@ -41,7 +41,7 @@ import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
 import { withRetry } from "./retry";
 import { getCliVersion } from "./version";
-import { ConfigurationError, inferProviderFromCI, parseProvider, remoteHost } from "./ci-env";
+import { ConfigurationError, resolveRepoInfo } from "./provider";
 
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
   console.log(getCliVersion());
@@ -82,7 +82,7 @@ Options:
 
 Environment:
   LINEAR_ACCESS_KEY          Pipeline access key (required)
-  LINEAR_RELEASE_REPOSITORY_PROVIDER  Force repository provider: github|gitlab|bitbucket
+  LINEAR_VCS_PROVIDER        Override VCS provider detection: github|gitlab|bitbucket
 
 Examples:
   linear-release sync
@@ -254,31 +254,7 @@ async function apiRequest<T>(query: string, variables?: Record<string, unknown>)
 
 function getResolvedRepoInfo(): ResolvedRepoInfo | null {
   const repoInfo = getRepoInfo();
-  if (!repoInfo) {
-    return null;
-  }
-  const override = process.env.LINEAR_RELEASE_REPOSITORY_PROVIDER;
-  if (override !== undefined) {
-    const provider = parseProvider(override);
-    if (!provider) {
-      throw new ConfigurationError(
-        `Invalid LINEAR_RELEASE_REPOSITORY_PROVIDER value "${override}". Expected github, gitlab, or bitbucket.`,
-        "invalid-provider-override",
-        { value: override },
-      );
-    }
-    return { ...repoInfo, provider };
-  }
-  const provider = parseProvider(repoInfo.provider) ?? inferProviderFromCI(process.env, repoInfo);
-  if (!provider) {
-    const host = remoteHost(repoInfo) ?? repoInfo.url ?? "unknown";
-    throw new ConfigurationError(
-      `Could not determine the VCS provider for remote host "${host}".\nSet LINEAR_RELEASE_REPOSITORY_PROVIDER=github|gitlab|bitbucket in your CI environment.`,
-      "unknown-provider",
-      { host },
-    );
-  }
-  return { ...repoInfo, provider };
+  return repoInfo ? resolveRepoInfo(repoInfo) : null;
 }
 
 async function syncCommand(): Promise<{

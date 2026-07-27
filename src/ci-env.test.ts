@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { detectCIEnvironment, inferProviderFromCI, parseProvider } from "./ci-env";
+import { detectCIEnvironment } from "./ci-env";
 
 describe("detectCIEnvironment", () => {
   const originalEnv = process.env;
@@ -80,55 +80,5 @@ describe("detectCIEnvironment", () => {
     process.env.CI = "true";
     process.env.GITHUB_ACTIONS = "true";
     expect(detectCIEnvironment()).toEqual({ name: "github-actions" });
-  });
-});
-
-describe("inferProviderFromCI", () => {
-  const repoInfo = {
-    owner: "group",
-    name: "subgroup/repo",
-    provider: null,
-    url: "https://git.example.com/group/subgroup/repo",
-  };
-
-  it("infers gitlab when the remote host matches CI_SERVER_HOST", () => {
-    const env = { GITLAB_CI: "true", CI_SERVER_HOST: "git.example.com" };
-    expect(inferProviderFromCI(env, repoInfo)).toBe("gitlab");
-  });
-
-  it("infers gitlab when clone_url rewrites the host but the project path matches", () => {
-    const env = { GITLAB_CI: "true", CI_SERVER_HOST: "git.example.com", CI_PROJECT_PATH: "group/subgroup/repo" };
-    const rewritten = { ...repoInfo, url: "https://192.168.1.23/group/subgroup/repo" };
-    expect(inferProviderFromCI(env, rewritten)).toBe("gitlab");
-  });
-
-  it("does not infer for a foreign clone when both host and path mismatch", () => {
-    const env = { GITLAB_CI: "true", CI_SERVER_HOST: "git.example.com", CI_PROJECT_PATH: "group/subgroup/repo" };
-    const foreign = { owner: "acme", name: "other", provider: null, url: "https://git.other.example/acme/other" };
-    expect(inferProviderFromCI(env, foreign)).toBeNull();
-  });
-
-  it("matches hosts case-insensitively and ignores the port", () => {
-    const env = { GITLAB_CI: "true", CI_SERVER_HOST: "git.example.com" };
-    const withPort = { ...repoInfo, url: "https://Git.Example.com:8443/group/subgroup/repo" };
-    expect(inferProviderFromCI(env, withPort)).toBe("gitlab");
-  });
-
-  it("does not infer outside GitLab CI", () => {
-    expect(inferProviderFromCI({ CI_SERVER_HOST: "git.example.com" }, repoInfo)).toBeNull();
-  });
-});
-
-describe("parseProvider", () => {
-  it("accepts the three providers case-insensitively", () => {
-    expect(parseProvider("GitLab")).toBe("gitlab");
-    expect(parseProvider(" github ")).toBe("github");
-    expect(parseProvider("bitbucket")).toBe("bitbucket");
-  });
-
-  it("rejects anything else", () => {
-    expect(parseProvider("gitea")).toBeNull();
-    expect(parseProvider(null)).toBeNull();
-    expect(parseProvider(undefined)).toBeNull();
   });
 });
