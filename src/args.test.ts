@@ -399,6 +399,26 @@ describe("parseCLIArgs", () => {
     expect(() => parseCLIArgs(["--timeout=-5"])).toThrow('Invalid --timeout value: "-5"');
   });
 
+  it("defaults --released-at to undefined", () => {
+    const result = parseCLIArgs([]);
+    expect(result.releasedAt).toBeUndefined();
+  });
+
+  it("parses a valid ISO-8601 --released-at to a Date", () => {
+    const result = parseCLIArgs(["--released-at", "2026-07-04T18:00:00Z"]);
+    expect(result.releasedAt).toBeInstanceOf(Date);
+    expect(result.releasedAt?.toISOString()).toBe("2026-07-04T18:00:00.000Z");
+  });
+
+  it("parses --released-at with = syntax", () => {
+    const result = parseCLIArgs(["--released-at=2026-01-15T09:30:00Z"]);
+    expect(result.releasedAt?.toISOString()).toBe("2026-01-15T09:30:00.000Z");
+  });
+
+  it("throws a helpful error on invalid --released-at value", () => {
+    expect(() => parseCLIArgs(["--released-at", "not-a-date"])).toThrow(/Invalid --released-at value/);
+  });
+
   it("defaults logLevel to Default", () => {
     const result = parseCLIArgs([]);
     expect(result.logLevel).toBe(LogLevel.Default);
