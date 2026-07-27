@@ -5,7 +5,7 @@ import {
   ensureCommitAvailable,
   getCommitContextsBetweenShas,
   getCurrentGitInfo,
-  getRepoInfo,
+  getRemoteUrl,
   resolveCommitRef,
   verifyAncestorReachable,
 } from "./git";
@@ -41,7 +41,7 @@ import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
 import { withRetry } from "./retry";
 import { getCliVersion } from "./version";
-import { ConfigurationError, resolveRepoInfo } from "./provider";
+import { ConfigurationError, parseRepoUrl, resolveRepoInfo } from "./provider";
 
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
   console.log(getCliVersion());
@@ -257,7 +257,7 @@ async function syncCommand(): Promise<{
 } | null> {
   logEnvironmentSummary();
 
-  const repoInfo = resolveRepoInfo(getRepoInfo());
+  const repoInfo = resolveRepoInfo(parseRepoUrl(getRemoteUrl()));
 
   // Fetch pipeline settings from API
   const pipelineSettings = await getPipelineSettings();

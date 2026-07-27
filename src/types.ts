@@ -82,11 +82,11 @@ export type RepositoryProvider = "github" | "gitlab" | "bitbucket";
 export type RepoInfo = {
   owner: string | null;
   name: string | null;
-  provider: RepositoryProvider | null;
+  host: string;
   url: string | null;
 };
 
-export type ResolvedRepoInfo = Omit<RepoInfo, "provider"> & { provider: RepositoryProvider };
+export type ResolvedRepoInfo = RepoInfo & { provider: RepositoryProvider };
 
 export type IssueReference = {
   identifier: string;
