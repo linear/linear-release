@@ -479,7 +479,7 @@ describe("custom issue patterns", () => {
     ["feat(routing)[ENG-123]: add stop reordering", ["ENG-123"]],
     ["fix[ENG-123]: handle empty payload", ["ENG-123"]],
     ["chore(deps)[ENG-7]: bump", ["ENG-7"]],
-    ["feat(vehicle)[LMC-123]: some commit reason", ["LMC-123"]],
+    ["feat(mobile)[APP-123]: some commit reason", ["APP-123"]],
     ["feat(api)![ENG-9]: breaking change", ["ENG-9"]],
     ["chore[ENG-7][ENG-8]: bump deps", ["ENG-7", "ENG-8"]],
   ])("extracts bracketed identifiers from %s", (message, expected) => {
