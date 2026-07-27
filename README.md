@@ -148,7 +148,7 @@ linear-release update --stage="in review" --name="Release 1.2.0"
 | `LINEAR_ACCESS_KEY`   | Yes      | Pipeline access key from Linear                                  |
 | `LINEAR_VCS_PROVIDER` | No       | Override VCS provider detection: `github`, `gitlab`, `bitbucket` |
 
-The repository provider is detected automatically from the remote hostname and, on GitLab CI, from the job environment — self-hosted GitLab on a custom domain needs no configuration. `LINEAR_VCS_PROVIDER` covers the setups where neither signal can identify the host, such as self-hosted GitHub Enterprise on a custom domain or CI platforms that don't expose the provider. When the provider can't be determined, `sync` fails before syncing rather than record repository data Linear can't use; these configuration errors exit with code `2` so a wrapper can tell a permanent misconfiguration from a transient failure.
+The provider is detected from the remote hostname, or on GitLab CI from the job environment. Set `LINEAR_VCS_PROVIDER` when neither identifies the host (e.g. self-hosted GitHub Enterprise on a custom domain). When the provider can't be determined, `sync` exits with code `2` before syncing anything.
 
 ### CLI Options
 
