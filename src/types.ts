@@ -77,12 +77,16 @@ export type GitInfo = {
   message: string | null;
 };
 
+export type RepositoryProvider = "github" | "gitlab" | "bitbucket";
+
 export type RepoInfo = {
   owner: string | null;
   name: string | null;
-  provider: string | null;
+  host: string;
   url: string | null;
 };
+
+export type ResolvedRepoInfo = RepoInfo & { provider: RepositoryProvider };
 
 export type IssueReference = {
   identifier: string;

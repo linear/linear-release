@@ -1,5 +1,5 @@
 import { execFileSync, execSync } from "node:child_process";
-import type { CommitContext, GitInfo, RepoInfo } from "./types";
+import type { CommitContext, GitInfo } from "./types";
 import { error as logError, verbose, warn } from "./log";
 
 /** Strips leading "./" or "/" so paths are clean for git pathspec. */
@@ -516,68 +516,13 @@ export function getCommitContextsBetweenShas(
   return commits;
 }
 
-function hostToProvider(host: string): string | null {
-  if (host === "gitlab.com" || host.includes("gitlab")) {
-    return "gitlab";
-  }
-  if (host === "github.com" || host.endsWith(".ghe.com") || host.includes("github")) {
-    return "github";
-  }
-  if (host === "bitbucket.org" || host.includes("bitbucket")) {
-    return "bitbucket";
-  }
-  return null;
-}
-
-/**
- * Parses a git remote URL (HTTPS or SSH) into repo information.
- *
- * @param remoteUrl The raw git remote URL string.
- * @returns Parsed repo info, or null if the URL could not be parsed.
- */
-export function parseRepoUrl(remoteUrl: string): RepoInfo | null {
-  // GitLab nested groups: split on the first slash so subgroup paths fold
-  // into the name segment (e.g. owner=group, name=subgroup/repo).
-  const httpsMatch = remoteUrl.match(/^https?:\/\/(?:[^@]+@)?([^/]+)\/([^/]+)\/(.+?)(?:\.git)?$/);
-  if (httpsMatch) {
-    const host = httpsMatch[1];
-    const owner = httpsMatch[2] || null;
-    const name = httpsMatch[3]?.replace(/\.git$/, "") || null;
-    return {
-      owner,
-      name,
-      provider: hostToProvider(host),
-      url: owner && name ? `https://${host}/${owner}/${name}` : null,
-    };
-  }
-
-  // Handle SSH URLs: git@github.com:owner/repo.git (GitLab nested groups
-  // follow the same first-slash split as the HTTPS case above).
-  const sshMatch = remoteUrl.match(/^git@([^:]+):([^/]+)\/(.+?)(?:\.git)?$/);
-  if (sshMatch) {
-    const host = sshMatch[1];
-    const owner = sshMatch[2] || null;
-    const name = sshMatch[3]?.replace(/\.git$/, "") || null;
-    return {
-      owner,
-      name,
-      provider: hostToProvider(host),
-      url: owner && name ? `https://${host}/${owner}/${name}` : null,
-    };
-  }
-
-  return null;
-}
-
-export function getRepoInfo(remote: string = "origin", cwd: string = process.cwd()): RepoInfo | null {
+export function getRemoteUrl(remote: string = "origin", cwd: string = process.cwd()): string | null {
   try {
-    const url = execSync(`git remote get-url ${remote}`, {
+    return execSync(`git remote get-url ${remote}`, {
       cwd,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
     }).trim();
-
-    return parseRepoUrl(url);
   } catch (error) {
     logError(`Failed to read repo info: ${error instanceof Error ? error.message : String(error)}`);
     return null;

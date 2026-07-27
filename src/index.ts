@@ -5,7 +5,7 @@ import {
   ensureCommitAvailable,
   getCommitContextsBetweenShas,
   getCurrentGitInfo,
-  getRepoInfo,
+  getRemoteUrl,
   resolveCommitRef,
   verifyAncestorReachable,
 } from "./git";
@@ -26,7 +26,7 @@ import {
   AccessKeyUpdateByPipelineResponse,
   DebugSink,
   IssueReference,
-  RepoInfo,
+  ResolvedRepoInfo,
 } from "./types";
 import {
   getCLIWarnings,
@@ -41,6 +41,7 @@ import { pluralize } from "./util";
 import { buildUserAgent } from "./user-agent";
 import { withRetry } from "./retry";
 import { getCliVersion } from "./version";
+import { ConfigurationError, parseRepoUrl, resolveRepoInfo } from "./provider";
 
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
   console.log(getCliVersion());
@@ -81,6 +82,7 @@ Options:
 
 Environment:
   LINEAR_ACCESS_KEY          Pipeline access key (required)
+  LINEAR_VCS_PROVIDER        Override VCS provider detection: github|gitlab|bitbucket
 
 Examples:
   linear-release sync
@@ -255,6 +257,8 @@ async function syncCommand(): Promise<{
 } | null> {
   logEnvironmentSummary();
 
+  const repoInfo = resolveRepoInfo(parseRepoUrl(getRemoteUrl()));
+
   // Fetch pipeline settings from API
   const pipelineSettings = await getPipelineSettings();
 
@@ -367,8 +371,6 @@ async function syncCommand(): Promise<{
   if (revertedIssueReferences.length > 0) {
     info(`Reverted issue keys: ${revertedIssueReferences.map((f) => f.identifier).join(", ")}`);
   }
-
-  const repoInfo = getRepoInfo();
 
   const issueIds = issueReferences.map((f) => f.identifier);
   const parts: string[] = [];
@@ -584,7 +586,7 @@ async function syncRelease(
   issueReferences: IssueReference[],
   revertedIssueReferences: IssueReference[],
   prNumbers: number[],
-  repoInfo: RepoInfo | null,
+  repoInfo: ResolvedRepoInfo | null,
   debugSink: DebugSink,
   releaseLinks: ReleaseLink[],
   releaseDocuments: ReleaseDocument[],
@@ -801,8 +803,12 @@ timeout.unref();
 
 main()
   .catch((e) => {
-    error(`Error: ${e.message}`);
-    process.exit(1);
+    if (e instanceof ConfigurationError && jsonOutput) {
+      process.stderr.write(`${JSON.stringify({ error: e.code, message: e.message })}\n`);
+    } else {
+      error(`Error: ${e.message}`);
+    }
+    process.exit(e instanceof ConfigurationError ? 2 : 1);
   })
   .finally(() => {
     clearTimeout(timeout);

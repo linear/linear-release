@@ -143,9 +143,12 @@ linear-release update --stage="in review" --name="Release 1.2.0"
 
 ### Environment Variables
 
-| Variable            | Required | Description                     |
-| ------------------- | -------- | ------------------------------- |
-| `LINEAR_ACCESS_KEY` | Yes      | Pipeline access key from Linear |
+| Variable              | Required | Description                                                      |
+| --------------------- | -------- | ---------------------------------------------------------------- |
+| `LINEAR_ACCESS_KEY`   | Yes      | Pipeline access key from Linear                                  |
+| `LINEAR_VCS_PROVIDER` | No       | Override VCS provider detection: `github`, `gitlab`, `bitbucket` |
+
+The provider is detected from the remote hostname, or on GitLab CI from the job environment. Set `LINEAR_VCS_PROVIDER` when neither identifies the host (e.g. self-hosted GitHub Enterprise on a custom domain). When the provider can't be determined, `sync` exits with code `2` before syncing anything.
 
 ### CLI Options
 
