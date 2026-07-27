@@ -245,7 +245,7 @@ linear-release sync --issue-pattern='\[([A-Z]+-\d+)\]'
 
 # Bare identifiers anywhere in the subject
 linear-release sync --issue-pattern='\b([A-Z]+-\d+)\b'
-# Matches: feat(api): ASP-621 handle payload
+# Matches: feat(api): ENG-621 handle payload
 # Also matches both IDs: fix(scope): color button red DEV-123 DEV-124
 ```
 

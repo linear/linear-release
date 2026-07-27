@@ -556,11 +556,11 @@ describe("custom issue patterns", () => {
     expect(
       ids(
         extractLinearIssueIdentifiersForCommit(
-          { sha: "abc", message: "feat(api): ASP-621 handle empty payload" },
+          { sha: "abc", message: "feat(api): ENG-621 handle empty payload" },
           { issuePattern: /\b([A-Z]+-\d+)\b/gi },
         ),
       ),
-    ).toEqual(["ASP-621"]);
+    ).toEqual(["ENG-621"]);
     expect(
       ids(
         extractLinearIssueIdentifiersForCommit(
