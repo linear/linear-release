@@ -2,17 +2,25 @@ import { execFileSync, execSync, spawn } from "node:child_process";
 import type { CommitContext, GitInfo } from "./types";
 import { error as logError, verbose, warn } from "./log";
 
-/** Strips leading "./" or "/" so paths are clean for git pathspec. */
+/** Preserves a leading "!" while cleaning the path for use as a git pathspec. */
 export function normalizePathspec(pattern: string): string {
-  return pattern.replace(/^(\.\/|\/)+/, "").trim();
+  const trimmed = pattern.trim();
+  const exclude = trimmed.startsWith("!");
+  const path = (exclude ? trimmed.slice(1) : trimmed).replace(/^(\.\/|\/)+/, "");
+  return exclude ? `!${path}` : path;
 }
 
 /**
- * Builds git pathspec arguments from include patterns.
+ * Builds git pathspec arguments from include and exclude patterns.
  *
- * Uses `:(top,glob)` pathspec prefix:
+ * Uses `:(top,glob)` pathspec prefix for includes and
+ * `:(top,glob,exclude)` for patterns prefixed with `!`:
  * - `top`: paths are relative to repo root, not the current working directory
  * - `glob`: enables `**` for recursive matching (e.g., "src/**")
+ * - `exclude`: removes matching paths after positive pathspecs are resolved
+ *
+ * Git treats an exclusion-only pathspec as matching everything first, which
+ * lets configurations use `!mobile/**` without also specifying `**`.
  *
  * @see https://git-scm.com/docs/gitglossary#Documentation/gitglossary.txt-aiddefpathspec
  */
@@ -22,8 +30,8 @@ export function buildPathspecArgs(includePaths: string[] | null): string[] {
   }
   const patterns = includePaths
     .map((p) => normalizePathspec(p))
-    .filter((p) => p.length > 0)
-    .map((p) => `:(top,glob)${p}`);
+    .filter((p) => p.length > 0 && p !== "!")
+    .map((p) => (p.startsWith("!") ? `:(top,glob,exclude)${p.slice(1)}` : `:(top,glob)${p}`));
   if (patterns.length === 0) {
     return [];
   }

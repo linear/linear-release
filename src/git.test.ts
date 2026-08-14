@@ -38,6 +38,11 @@ describe("normalizePathspec", () => {
     expect(normalizePathspec("  android/**  ")).toBe("android/**");
   });
 
+  it("should preserve negation while normalizing the path", () => {
+    expect(normalizePathspec(" !./mobile/** ")).toBe("!mobile/**");
+    expect(normalizePathspec("!/desktop/**")).toBe("!desktop/**");
+  });
+
   it("should handle empty strings", () => {
     expect(normalizePathspec("")).toBe("");
   });
@@ -74,6 +79,19 @@ describe("buildPathspecArgs", () => {
       ":(top,glob)android/**",
       ":(top,glob)ios/**",
     ]);
+  });
+
+  it("should build exclude pathspecs for negated patterns", () => {
+    expect(buildPathspecArgs(["**", "!./mobile/**", " !/desktop/** "])).toEqual([
+      "--",
+      ":(top,glob)**",
+      ":(top,glob,exclude)mobile/**",
+      ":(top,glob,exclude)desktop/**",
+    ]);
+  });
+
+  it("should ignore an empty negated pattern", () => {
+    expect(buildPathspecArgs(["!"])).toEqual([]);
   });
 });
 
@@ -776,6 +794,24 @@ describe("getCommitContextsBetweenShas", () => {
     });
     expect(withGithubFilter).toHaveLength(1);
     expect(withGithubFilter[0]?.sha).toBe(repo.commits.second);
+  });
+
+  it("should exclude commits matching negated path patterns", async () => {
+    const result = await getCommitContextsBetweenShas(repo.commits.first, repo.commits.third, {
+      includePaths: ["**", "!.github/**"],
+      cwd: repo.cwd,
+    });
+
+    expect(result.map((commit) => commit.sha)).toEqual([repo.commits.third]);
+  });
+
+  it("should support exclusion-only path patterns", async () => {
+    const result = await getCommitContextsBetweenShas(repo.commits.first, repo.commits.third, {
+      includePaths: ["!.github/**"],
+      cwd: repo.cwd,
+    });
+
+    expect(result.map((commit) => commit.sha)).toEqual([repo.commits.third]);
   });
 
   it("should resolve paths relative to repo root even when process.cwd() is a subdirectory", async () => {
