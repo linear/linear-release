@@ -43,6 +43,11 @@ describe("normalizePathspec", () => {
     expect(normalizePathspec("!/desktop/**")).toBe("!desktop/**");
   });
 
+  it("should trim whitespace between the negation and the path", () => {
+    expect(normalizePathspec("! mobile/**")).toBe("!mobile/**");
+    expect(normalizePathspec("! ./desktop/**")).toBe("!desktop/**");
+  });
+
   it("should handle empty strings", () => {
     expect(normalizePathspec("")).toBe("");
   });
@@ -92,6 +97,7 @@ describe("buildPathspecArgs", () => {
 
   it("should ignore an empty negated pattern", () => {
     expect(buildPathspecArgs(["!"])).toEqual([]);
+    expect(buildPathspecArgs(["! "])).toEqual([]);
   });
 });
 
@@ -1179,6 +1185,19 @@ describe("merge commit handling", () => {
       expect(shas.has(repo.commits.subjectMerge)).toBe(true);
 
       const branchNames = result.map((c) => c.branchName).filter((b): b is string => !!b);
+      expect(branchNames).toContain("feat/XYZ-2-impl");
+    });
+
+    it("applies merge retention under an exclusion-only filter", async () => {
+      // With `!app-a/**` the stale merge delivered only excluded paths, so it
+      // must be dropped, while the merge that delivered app-b/ is retained.
+      const result = await getCommitContextsBetweenShas(repo.commits.base, repo.commits.subjectMerge, {
+        includePaths: ["!app-a/**"],
+        cwd: repo.cwd,
+      });
+
+      const branchNames = result.map((c) => c.branchName).filter((b): b is string => !!b);
+      expect(branchNames).not.toContain("feat/ABC-1-stale");
       expect(branchNames).toContain("feat/XYZ-2-impl");
     });
 

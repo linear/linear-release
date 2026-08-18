@@ -6,7 +6,7 @@ import { error as logError, verbose, warn } from "./log";
 export function normalizePathspec(pattern: string): string {
   const trimmed = pattern.trim();
   const exclude = trimmed.startsWith("!");
-  const path = (exclude ? trimmed.slice(1) : trimmed).replace(/^(\.\/|\/)+/, "");
+  const path = (exclude ? trimmed.slice(1) : trimmed).trim().replace(/^(\.\/|\/)+/, "");
   return exclude ? `!${path}` : path;
 }
 
