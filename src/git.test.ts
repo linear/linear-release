@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ConfigurationError } from "./provider";
 import {
   assertGitAvailable,
   buildPathspecArgs,
@@ -36,6 +37,16 @@ describe("normalizePathspec", () => {
 
   it("should trim whitespace", () => {
     expect(normalizePathspec("  android/**  ")).toBe("android/**");
+  });
+
+  it("should preserve negation while normalizing the path", () => {
+    expect(normalizePathspec(" !./mobile/** ")).toBe("!mobile/**");
+    expect(normalizePathspec("!/desktop/**")).toBe("!desktop/**");
+  });
+
+  it("should trim whitespace between the negation and the path", () => {
+    expect(normalizePathspec("! mobile/**")).toBe("!mobile/**");
+    expect(normalizePathspec("! ./desktop/**")).toBe("!desktop/**");
   });
 
   it("should handle empty strings", () => {
@@ -74,6 +85,21 @@ describe("buildPathspecArgs", () => {
       ":(top,glob)android/**",
       ":(top,glob)ios/**",
     ]);
+  });
+
+  it("should build exclude pathspecs for negated patterns", () => {
+    expect(buildPathspecArgs(["**", "!./mobile/**", " !/desktop/** "])).toEqual([
+      "--",
+      ":(top,glob)**",
+      ":(top,glob,exclude)mobile/**",
+      ":(top,glob,exclude)desktop/**",
+    ]);
+  });
+
+  it("should reject a negation without a path", () => {
+    expect(() => buildPathspecArgs(["!"])).toThrow(ConfigurationError);
+    expect(() => buildPathspecArgs(["! "])).toThrow("a negation must include a path");
+    expect(() => buildPathspecArgs(["src/**", "!"])).toThrow(ConfigurationError);
   });
 });
 
@@ -778,6 +804,33 @@ describe("getCommitContextsBetweenShas", () => {
     expect(withGithubFilter[0]?.sha).toBe(repo.commits.second);
   });
 
+  it("should exclude commits matching negated path patterns", async () => {
+    const result = await getCommitContextsBetweenShas(repo.commits.first, repo.commits.third, {
+      includePaths: ["**", "!.github/**"],
+      cwd: repo.cwd,
+    });
+
+    expect(result.map((commit) => commit.sha)).toEqual([repo.commits.third]);
+  });
+
+  it("should support exclusion-only path patterns", async () => {
+    const result = await getCommitContextsBetweenShas(repo.commits.first, repo.commits.third, {
+      includePaths: ["!.github/**"],
+      cwd: repo.cwd,
+    });
+
+    expect(result.map((commit) => commit.sha)).toEqual([repo.commits.third]);
+  });
+
+  it("should reject a negation without a path instead of scanning unfiltered", async () => {
+    await expect(
+      getCommitContextsBetweenShas(repo.commits.first, repo.commits.third, {
+        includePaths: ["!"],
+        cwd: repo.cwd,
+      }),
+    ).rejects.toThrow(ConfigurationError);
+  });
+
   it("should resolve paths relative to repo root even when process.cwd() is a subdirectory", async () => {
     // Simulates running the CLI from a subdirectory (e.g., mobile-ios/ci_scripts)
     // while using paths relative to the repo root (e.g., src/**)
@@ -1143,6 +1196,19 @@ describe("merge commit handling", () => {
       expect(shas.has(repo.commits.subjectMerge)).toBe(true);
 
       const branchNames = result.map((c) => c.branchName).filter((b): b is string => !!b);
+      expect(branchNames).toContain("feat/XYZ-2-impl");
+    });
+
+    it("applies merge retention under an exclusion-only filter", async () => {
+      // With `!app-a/**` the stale merge delivered only excluded paths, so it
+      // must be dropped, while the merge that delivered app-b/ is retained.
+      const result = await getCommitContextsBetweenShas(repo.commits.base, repo.commits.subjectMerge, {
+        includePaths: ["!app-a/**"],
+        cwd: repo.cwd,
+      });
+
+      const branchNames = result.map((c) => c.branchName).filter((b): b is string => !!b);
+      expect(branchNames).not.toContain("feat/ABC-1-stale");
       expect(branchNames).toContain("feat/XYZ-2-impl");
     });
 

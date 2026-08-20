@@ -215,9 +215,12 @@ linear-release sync --include-paths="apps/mobile/**"
 
 # Multiple patterns
 linear-release sync --include-paths="apps/mobile/**,packages/shared/**"
+
+# Include everything except mobile and desktop apps
+linear-release sync --include-paths='!apps/mobile/**,!apps/desktop/**'
 ```
 
-Patterns use [Git pathspec](https://git-scm.com/docs/gitglossary#Documentation/gitglossary.txt-pathspec) glob syntax. Paths are relative to the repository root.
+Patterns use [Git pathspec](https://git-scm.com/docs/gitglossary#Documentation/gitglossary.txt-pathspec) glob syntax. Paths are relative to the repository root. Prefix a pattern with `!` to exclude matching paths. Negated patterns can be combined with positive patterns, or used on their own to include everything except the excluded paths.
 
 Path patterns can also be configured in your pipeline settings in Linear. If both are set, the CLI `--include-paths` option takes precedence.
 

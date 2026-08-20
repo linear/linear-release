@@ -3,7 +3,7 @@ import type { RepoInfo, RepositoryProvider, ResolvedRepoInfo } from "./types";
 export class ConfigurationError extends Error {
   constructor(
     message: string,
-    readonly code: "invalid-provider-override" | "unknown-provider",
+    readonly code: "invalid-provider-override" | "unknown-provider" | "invalid-path-filter",
   ) {
     super(message);
     this.name = "ConfigurationError";
