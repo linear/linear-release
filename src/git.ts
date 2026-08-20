@@ -1,4 +1,5 @@
 import { execFileSync, execSync, spawn } from "node:child_process";
+import { ConfigurationError } from "./provider";
 import type { CommitContext, GitInfo } from "./types";
 import { error as logError, verbose, warn } from "./log";
 
@@ -22,20 +23,28 @@ export function normalizePathspec(pattern: string): string {
  * Git treats an exclusion-only pathspec as matching everything first, which
  * lets configurations use `!mobile/**` without also specifying `**`.
  *
+ * A negation with no path (`!`) is rejected rather than dropped: silently
+ * ignoring it would run the scan unfiltered and sweep unrelated commits into
+ * the release.
+ *
  * @see https://git-scm.com/docs/gitglossary#Documentation/gitglossary.txt-aiddefpathspec
  */
 export function buildPathspecArgs(includePaths: string[] | null): string[] {
   if (!includePaths || includePaths.length === 0) {
     return [];
   }
-  const patterns = includePaths
-    .map((p) => normalizePathspec(p))
-    .filter((p) => p.length > 0 && p !== "!")
-    .map((p) => (p.startsWith("!") ? `:(top,glob,exclude)${p.slice(1)}` : `:(top,glob)${p}`));
-  if (patterns.length === 0) {
+  const patterns = includePaths.map((p) => normalizePathspec(p)).filter((p) => p.length > 0);
+  if (patterns.includes("!")) {
+    throw new ConfigurationError(
+      'Invalid path filter "!": a negation must include a path (e.g. "!mobile/**")',
+      "invalid-path-filter",
+    );
+  }
+  const pathspecs = patterns.map((p) => (p.startsWith("!") ? `:(top,glob,exclude)${p.slice(1)}` : `:(top,glob)${p}`));
+  if (pathspecs.length === 0) {
     return [];
   }
-  return ["--", ...patterns];
+  return ["--", ...pathspecs];
 }
 
 /**

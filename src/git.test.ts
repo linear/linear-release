@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ConfigurationError } from "./provider";
 import {
   assertGitAvailable,
   buildPathspecArgs,
@@ -95,9 +96,10 @@ describe("buildPathspecArgs", () => {
     ]);
   });
 
-  it("should ignore an empty negated pattern", () => {
-    expect(buildPathspecArgs(["!"])).toEqual([]);
-    expect(buildPathspecArgs(["! "])).toEqual([]);
+  it("should reject a negation without a path", () => {
+    expect(() => buildPathspecArgs(["!"])).toThrow(ConfigurationError);
+    expect(() => buildPathspecArgs(["! "])).toThrow("a negation must include a path");
+    expect(() => buildPathspecArgs(["src/**", "!"])).toThrow(ConfigurationError);
   });
 });
 
@@ -818,6 +820,15 @@ describe("getCommitContextsBetweenShas", () => {
     });
 
     expect(result.map((commit) => commit.sha)).toEqual([repo.commits.third]);
+  });
+
+  it("should reject a negation without a path instead of scanning unfiltered", async () => {
+    await expect(
+      getCommitContextsBetweenShas(repo.commits.first, repo.commits.third, {
+        includePaths: ["!"],
+        cwd: repo.cwd,
+      }),
+    ).rejects.toThrow(ConfigurationError);
   });
 
   it("should resolve paths relative to repo root even when process.cwd() is a subdirectory", async () => {
