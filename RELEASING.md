@@ -7,6 +7,7 @@ This document describes how to create a new release of `linear-release`.
 - You must be on the `main` branch with a clean working tree, up to date with `origin/main`
 - The [GitHub CLI](https://cli.github.com) (`gh`) must be installed and authenticated
 - `pnpm` must be installed
+- Immutable releases must be enabled in the repository settings
 
 ## Creating a release
 
@@ -57,9 +58,13 @@ When a PR from a `release/*` branch is merged into `main`, the **Auto-tag releas
 
 The **Release** workflow (`.github/workflows/release.yml`) is triggered by the new tag and:
 
-1. Builds platform-specific executables (linux-x64, darwin-x64, darwin-arm64) using Bun
+1. Builds platform-specific executables (linux-x64, linux-arm64, darwin-x64, darwin-arm64) using Bun
 2. Code signs and notarizes the macOS binaries
-3. Creates a GitHub Release with the built binaries attached
+3. Generates and validates `checksums.txt` for the final executables
+4. Creates a draft GitHub Release and attaches all executables and the checksum manifest
+5. Publishes the completed draft as an immutable release
+
+After publication, release assets cannot be changed or deleted and the associated tag cannot be moved. If a published artifact is incorrect, fix the issue and publish a new patch version instead of replacing the existing asset.
 
 ### 5. Update the GitHub action
 

@@ -53,6 +53,8 @@ curl -L https://github.com/linear/linear-release/releases/latest/download/linear
 chmod +x linear-release
 ```
 
+Releases after `v0.16.0` include a `checksums.txt` asset containing the SHA-256 digest of every executable. These releases are immutable, so their tags, executables, and checksum manifests cannot be replaced after publication. CLI releases through `v0.16.0` predate this integrity contract.
+
 ## Quick Start
 
 ### GitHub Actions

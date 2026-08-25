@@ -162,9 +162,34 @@ jobs:
               cp "$dir/linear-release.exe" "./release-files/linear-release-${platform}.exe"
             fi
           done
+
+          expected_assets=(
+            linear-release-linux-x64
+            linear-release-linux-arm64
+            linear-release-darwin-x64
+            linear-release-darwin-arm64
+          )
+          for asset in "${expected_assets[@]}"; do
+            if [ ! -f "./release-files/$asset" ]; then
+              echo "::error::Missing release asset: $asset"
+              exit 1
+            fi
+          done
+
+          actual_asset_count=$(find ./release-files -maxdepth 1 -type f -name 'linear-release-*' | wc -l | tr -d ' ')
+          if [ "$actual_asset_count" -ne "${#expected_assets[@]}" ]; then
+            echo "::error::Expected ${#expected_assets[@]} release assets, found $actual_asset_count"
+            exit 1
+          fi
+
+          (
+            cd ./release-files
+            LC_ALL=C sha256sum linear-release-* > checksums.txt
+            sha256sum --check --strict checksums.txt
+          )
           ls -la ./release-files/
 
-      - name: Create Release
+      - name: Create draft release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ steps.tag.outputs.tag_name }}
@@ -173,12 +198,60 @@ jobs:
             ./release-files/*
           generate_release_notes: true
           token: ${{ secrets.GITHUB_TOKEN }}
-          draft: false
+          draft: true
           prerelease: false
+
+      - name: Publish immutable release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.tag.outputs.tag_name }}
+        run: gh release edit "$TAG_NAME" --draft=false
+
+  verify-release:
+    name: Verify published release
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Verify immutable metadata and assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.release.outputs.tag_name }}
+        run: |
+          release=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG_NAME}")
+          if [ "$(jq -r '.immutable' <<<"$release")" != "true" ]; then
+            echo "::error::Published release is not immutable"
+            exit 1
+          fi
+
+          for asset in \
+            linear-release-linux-x64 \
+            linear-release-linux-arm64 \
+            linear-release-darwin-x64 \
+            linear-release-darwin-arm64 \
+            checksums.txt; do
+            count=$(jq --arg asset "$asset" '[.assets[] | select(.name == $asset)] | length' <<<"$release")
+            if [ "$count" -ne 1 ]; then
+              echo "::error::Expected one published $asset asset, found $count"
+              exit 1
+            fi
+          done
+
+      - name: Verify published checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.release.outputs.tag_name }}
+        run: |
+          mkdir release-assets
+          gh release download "$TAG_NAME" --dir release-assets
+          cd release-assets
+          sha256sum --check --strict checksums.txt
 
   label-release:
     name: Label release with version
-    needs: release
+    needs: [release, verify-release]
     permissions:
       contents: read
     uses: ./.github/workflows/run-linear-release.yml
