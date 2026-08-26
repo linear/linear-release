@@ -182,7 +182,7 @@ The provider is detected from the remote hostname, or on GitLab CI from the job 
 | `update`   | Updates that exact release version                                                                         | Updates latest started release, or latest planned release if no started release exists                                                                                                                                    |
 | `complete` | Completes that exact release version                                                                       | Completes latest started release                                                                                                                                                                                          |
 
-For scheduled pipelines, prefer always passing `--release-version` in CI, especially when releases overlap. Only `sync` sets the version on a release — `complete` and `update` strictly look up by version. If your CI has no natural labeling moment (e.g. tag-driven releases), run `sync --release-version=X` immediately before `complete --release-version=X` at release time.
+For scheduled pipelines, prefer always passing `--release-version` in CI, especially when releases overlap. Only `sync` can set the version on a release. If the version is only known when you publish, run `sync --base-ref=HEAD --release-version=X` immediately before `complete --release-version=X`. The `sync` sets `X` on the current unversioned release; `complete` can then mark it complete.
 
 ### JSON Output
 
