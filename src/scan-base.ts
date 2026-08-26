@@ -46,8 +46,9 @@ export function selectAutomaticScanBase(
   currentSha: string,
   deps: FindBaseShaDeps,
   cwd: string = process.cwd(),
+  syncingVersion?: string,
 ): ScanBase {
-  const result = findBaseSha(candidates, currentSha, deps);
+  const result = findBaseSha(candidates, currentSha, deps, syncingVersion);
   if (result.kind === "found") {
     return { kind: "release", sha: result.sha };
   }

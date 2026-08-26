@@ -292,7 +292,7 @@ async function syncCommand(): Promise<{
   }
 
   const recentReleases = await getRecentReleases();
-  const scanBase = getScanBase(recentReleases, currentCommit.commit);
+  const scanBase = getScanBase(recentReleases, currentCommit.commit, releaseVersion);
   let latestSha = scanBase.sha;
   let inspectingOnlyCurrentCommit = false;
 
@@ -542,6 +542,7 @@ async function getRecentReleases(): Promise<Release[]> {
       recentReleasesByAccessKey(limit: $limit) {
         id
         name
+        version
         createdAt
         commitSha
       }
@@ -553,7 +554,7 @@ async function getRecentReleases(): Promise<Release[]> {
   return response.data.recentReleasesByAccessKey;
 }
 
-function getScanBase(candidates: Release[], currentSha: string): ScanBase {
+function getScanBase(candidates: Release[], currentSha: string, syncingVersion?: string): ScanBase {
   if (baseRef) {
     let resolvedSha: string;
     try {
@@ -566,7 +567,13 @@ function getScanBase(candidates: Release[], currentSha: string): ScanBase {
     return { kind: "base-ref", sha: resolvedSha, ref: baseRef };
   }
 
-  const scanBase = selectAutomaticScanBase(candidates, currentSha, { verifyAncestorReachable });
+  const scanBase = selectAutomaticScanBase(
+    candidates,
+    currentSha,
+    { verifyAncestorReachable },
+    undefined,
+    syncingVersion,
+  );
   if (scanBase.kind !== "first-sync") {
     return scanBase;
   }
