@@ -23,6 +23,7 @@ export type ParsedCLIArgs = {
   command: string;
   releaseName?: string;
   releaseVersion?: string;
+  releaseDescription?: string;
   stageName?: string;
   baseRef?: string;
   includePaths: string[];
@@ -130,6 +131,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
     options: {
       name: { type: "string" },
       "release-version": { type: "string" },
+      description: { type: "string" },
       stage: { type: "string" },
       "base-ref": { type: "string" },
       "include-paths": { type: "string" },
@@ -236,6 +238,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
     command,
     releaseName: values.name,
     releaseVersion: values["release-version"],
+    releaseDescription: values.description,
     stageName: values.stage,
     baseRef: values["base-ref"],
     includePaths: values["include-paths"]

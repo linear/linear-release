@@ -67,6 +67,7 @@ Commands:
 Options:
   --name=<name>              Custom release name
   --release-version=<version>  Release version identifier
+  --description=<description>  Release description (empty string clears it)
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
   --include-subjects=<regex> Filter commits whose subject (first line) matches the regex
@@ -92,6 +93,7 @@ Environment:
 Examples:
   linear-release sync
   linear-release sync --name="Release 1.2.0" --release-version="1.2.0"
+  linear-release sync --release-version="1.2.0" --description="Android + iOS"
   linear-release complete
   linear-release update --stage=production
   linear-release sync --include-paths="apps/web/**,packages/**"
@@ -125,6 +127,7 @@ const {
   command,
   releaseName,
   releaseVersion,
+  releaseDescription,
   stageName,
   baseRef,
   includePaths,
@@ -223,6 +226,10 @@ function formatDocumentsSummary(docs: ReleaseDocument[]): string {
 
 function formatReleaseNotesSummary(notes: ReleaseNotes | undefined): string {
   return notes ? `, release notes (${notes.content.length} chars)` : "";
+}
+
+function formatDescriptionSummary(description: string | undefined): string {
+  return description !== undefined ? `, description (${description.length} chars)` : "";
 }
 
 const logEnvironmentSummary = () => {
@@ -419,7 +426,7 @@ async function syncCommand(): Promise<{
     const targetName = releaseName ?? "(server-assigned)";
     const versionPart = releaseVersion ? `version: ${releaseVersion}` : "no version set";
     info(
-      `[dry-run] Would sync release ${targetName} (${versionPart}): ${scanned}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
+      `[dry-run] Would sync release ${targetName} (${versionPart}): ${scanned}${formatDescriptionSummary(releaseDescription)}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
     );
     return null;
   }
@@ -433,10 +440,13 @@ async function syncCommand(): Promise<{
     links,
     documents,
     releaseNotes,
-    { preserveStoredCommitSha: Boolean(anchorAheadOfHead) },
+    {
+      preserveStoredCommitSha: Boolean(anchorAheadOfHead),
+      description: releaseDescription,
+    },
   );
   info(
-    `Synced to release ${release.name} (${formatVersion(release)}): ${scanned}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
+    `Synced to release ${release.name} (${formatVersion(release)}): ${scanned}${formatDescriptionSummary(releaseDescription)}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
   );
   if (scanBase.kind === "base-ref") {
     info(`Stored release baseline: ${(release.commitSha ?? currentCommit.commit).slice(0, 7)}`);
@@ -464,7 +474,7 @@ async function completeCommand(): Promise<{
     const targetName = releaseName ?? "(current release)";
     const versionPart = releaseVersion ? `version: ${releaseVersion}` : "no version set";
     info(
-      `[dry-run] Would complete release ${targetName} (${versionPart})${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
+      `[dry-run] Would complete release ${targetName} (${versionPart})${formatDescriptionSummary(releaseDescription)}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
     );
     return null;
   }
@@ -476,10 +486,11 @@ async function completeCommand(): Promise<{
     links,
     documents,
     releaseNotes,
+    description: releaseDescription,
   });
   if (result.success) {
     info(
-      `Completed release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)})${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
+      `Completed release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)})${formatDescriptionSummary(releaseDescription)}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
     );
   } else {
     throw new Error("Failed to complete release");
@@ -510,7 +521,7 @@ async function updateCommand(): Promise<{
     const targetName = releaseName ?? "(current release)";
     const versionPart = releaseVersion ? `version: ${releaseVersion}` : "no version set";
     info(
-      `[dry-run] Would update release ${targetName} (${versionPart}) to stage ${stageName}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
+      `[dry-run] Would update release ${targetName} (${versionPart}) to stage ${stageName}${formatDescriptionSummary(releaseDescription)}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
     );
     return null;
   }
@@ -521,6 +532,7 @@ async function updateCommand(): Promise<{
       stage: stageName,
       version: releaseVersion,
       name: releaseName,
+      description: releaseDescription,
       links,
       documents,
       releaseNotes,
@@ -532,7 +544,7 @@ async function updateCommand(): Promise<{
 
   if (result.success) {
     info(
-      `Updated release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)}) to stage ${result.release?.stageName}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
+      `Updated release ${result.release?.name ?? "(unknown)"} (${formatVersion(result.release)}) to stage ${result.release?.stageName}${formatDescriptionSummary(releaseDescription)}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
     );
   } else {
     throw new Error("Failed to update release");
@@ -636,7 +648,7 @@ async function syncRelease(
   releaseLinks: ReleaseLink[],
   releaseDocuments: ReleaseDocument[],
   releaseNotesValue: ReleaseNotes | undefined,
-  options: { preserveStoredCommitSha: boolean },
+  options: { preserveStoredCommitSha: boolean; description?: string },
 ): Promise<Release> {
   const currentSha = await getCurrentGitInfo().commit;
   if (!currentSha) {
@@ -669,6 +681,7 @@ async function syncRelease(
       input: {
         name: releaseName,
         version: releaseVersion,
+        description: options.description,
         commitSha: currentSha,
         preserveStoredCommitSha: options.preserveStoredCommitSha,
         issueReferences,
@@ -708,6 +721,7 @@ async function completeRelease(options: {
   links: ReleaseLink[];
   documents: ReleaseDocument[];
   releaseNotes?: ReleaseNotes;
+  description?: string;
 }): Promise<{
   success: boolean;
   release: { id: string; name: string; version?: string; url?: string } | null;
@@ -719,6 +733,7 @@ async function completeRelease(options: {
     links: releaseLinks,
     documents: releaseDocuments,
     releaseNotes: notesValue,
+    description,
   } = options;
 
   const response = await apiRequest<AccessKeyCompleteReleaseResponse>(
@@ -739,6 +754,7 @@ async function completeRelease(options: {
       input: {
         name,
         version,
+        description,
         commitSha,
         links: releaseLinks.length > 0 ? releaseLinks : undefined,
         documents: releaseDocuments.length > 0 ? releaseDocuments : undefined,
@@ -754,6 +770,7 @@ async function updateReleaseByPipeline(options: {
   stage?: string;
   version?: string;
   name?: string;
+  description?: string;
   links: ReleaseLink[];
   documents: ReleaseDocument[];
   releaseNotes?: ReleaseNotes;
@@ -767,7 +784,15 @@ async function updateReleaseByPipeline(options: {
     stageName: string;
   } | null;
 }> {
-  const { stage, version, name, links: releaseLinks, documents: releaseDocuments, releaseNotes: notesValue } = options;
+  const {
+    stage,
+    version,
+    name,
+    description,
+    links: releaseLinks,
+    documents: releaseDocuments,
+    releaseNotes: notesValue,
+  } = options;
   const response = await apiRequest<AccessKeyUpdateByPipelineResponse>(
     `
     mutation releaseUpdateByPipelineByAccessKey($input: ReleaseUpdateByPipelineInputBase!) {
@@ -790,6 +815,7 @@ async function updateReleaseByPipeline(options: {
         stage,
         version,
         name,
+        description,
         links: releaseLinks.length > 0 ? releaseLinks : undefined,
         documents: releaseDocuments.length > 0 ? releaseDocuments : undefined,
         releaseNotes: notesValue,

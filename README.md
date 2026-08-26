@@ -109,6 +109,9 @@ linear-release sync
 
 # Specify custom name and version
 linear-release sync --name="Release 1.2.0" --release-version="1.2.0"
+
+# Set release metadata
+linear-release sync --release-version="1.2.0" --description="Android + iOS; Shorebird patch 3"
 ```
 
 ### `complete`
@@ -124,6 +127,9 @@ linear-release complete --release-version="1.2.0"
 
 # Sets a custom name when completing the release
 linear-release complete --name="Release 1.2.0"
+
+# Sets the description when completing the release
+linear-release complete --description="Android + iOS"
 ```
 
 ### `update`
@@ -139,6 +145,9 @@ linear-release update --stage="in review" --release-version="1.2.0"
 
 # Sets a custom name when updating the release
 linear-release update --stage="in review" --name="Release 1.2.0"
+
+# Sets the description when updating the release
+linear-release update --stage="in review" --description="Android + iOS"
 ```
 
 ## Configuration
@@ -158,6 +167,7 @@ The provider is detected from the remote hostname, or on GitLab CI from the job 
 | ---------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--name`               | `sync`, `complete`, `update` | Custom release name. For `sync`, the value is applied to the targeted release — both newly created releases and existing ones get the provided name. For `complete` and `update`, sets the name on the targeted release.                                             |
 | `--release-version`    | `sync`, `complete`, `update` | Release version identifier. For `sync`, defaults to short commit hash. For `complete` and `update`, selects an existing release with that version (errors if none exists); does not change a release's version. If omitted, targets the most recent started release. |
+| `--description`        | `sync`, `complete`, `update` | Release description. Pass an empty string to clear an existing description.                                                                                                                                                                                          |
 | `--stage`              | `update`                     | Target deployment stage (required for `update`)                                                                                                                                                                                                                      |
 | `--include-paths`      | `sync`                       | Filter commits by changed file paths                                                                                                                                                                                                                                 |
 | `--include-subjects`   | `sync`                       | Filter commits whose subject (first line) matches a regex                                                                                                                                                                                                            |
