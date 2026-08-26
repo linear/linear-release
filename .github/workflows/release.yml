@@ -245,7 +245,7 @@ jobs:
           TAG_NAME: ${{ needs.release.outputs.tag_name }}
         run: |
           mkdir release-assets
-          gh release download "$TAG_NAME" --dir release-assets
+          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --dir release-assets
           cd release-assets
           sha256sum --check --strict checksums.txt
 
