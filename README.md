@@ -111,7 +111,7 @@ linear-release sync
 linear-release sync --name="Release 1.2.0" --release-version="1.2.0"
 
 # Set release metadata
-linear-release sync --release-version="1.2.0" --description="Android + iOS; Shorebird patch 3"
+linear-release sync --release-version="1.2.0" --description="Highlights and rollout details"
 ```
 
 ### `complete`
@@ -129,7 +129,7 @@ linear-release complete --release-version="1.2.0"
 linear-release complete --name="Release 1.2.0"
 
 # Sets the description when completing the release
-linear-release complete --description="Android + iOS"
+linear-release complete --description="Highlights and rollout details"
 ```
 
 ### `update`
@@ -147,7 +147,7 @@ linear-release update --stage="in review" --release-version="1.2.0"
 linear-release update --stage="in review" --name="Release 1.2.0"
 
 # Sets the description when updating the release
-linear-release update --stage="in review" --description="Android + iOS"
+linear-release update --stage="in review" --description="Highlights and rollout details"
 ```
 
 ## Configuration
