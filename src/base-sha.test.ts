@@ -18,10 +18,11 @@ function commit(cwd: string, file: string, content: string, message: string): st
   return runGit("rev-parse HEAD", cwd);
 }
 
-function release(name: string, commitSha: string | undefined, daysAgoCreated: number): Release {
+function release(name: string, commitSha: string | undefined, daysAgoCreated: number, version?: string): Release {
   return {
     id: `id-${name}`,
     name,
+    version,
     commitSha,
     createdAt: new Date(Date.now() - daysAgoCreated * 24 * 60 * 60 * 1000).toISOString(),
   };
@@ -61,11 +62,11 @@ function buildRepo() {
 
   // Back to main
   runGit("checkout -q main", cwd);
-  commit(cwd, "f", "2", "m2");
+  const m2 = commit(cwd, "f", "2", "m2");
   const mainPrev = commit(cwd, "f", "3", "m3 (1.71.0 release)");
   const mainHead = commit(cwd, "f", "4", "m4 (1.72.0 HEAD)");
 
-  return { cwd, hotfixSha, hotfixHead, mainPrev, mainHead };
+  return { cwd, m1, m2, hotfixSha, hotfixHead, mainPrev, mainHead };
 }
 
 describe("findBaseSha", () => {
@@ -126,6 +127,40 @@ describe("findBaseSha", () => {
 
   it("scenario F — empty list (first-ever sync): returns fallback", () => {
     expect(findBaseSha([], repo.mainHead, deps)).toEqual({ kind: "fallback" });
+  });
+
+  it("scenario G — zombie ordering without a version match: picks the stale reachable candidate", () => {
+    // Server-side recency ordering is the guard against stale started releases
+    // appearing first; without a version match, the existing walk is preserved.
+    const candidates = [
+      release("stale started release", repo.m1, 21),
+      release("newer completed release", repo.mainPrev, 1),
+    ];
+    expect(findBaseSha(candidates, repo.mainHead, deps)).toEqual({ kind: "found", sha: repo.m1 });
+  });
+
+  it("scenario H — reachable version match: takes priority over an earlier reachable candidate", () => {
+    const candidates = [
+      release("stale started release", repo.m1, 21),
+      release("newer completed release", repo.mainPrev, 1),
+      release("matching release", repo.m2, 2, "1.72.0"),
+    ];
+    expect(findBaseSha(candidates, repo.mainHead, deps, "1.72.0")).toEqual({
+      kind: "found",
+      sha: repo.m2,
+    });
+  });
+
+  it("scenario I — non-ancestor version match: falls back to the normal walk", () => {
+    const candidates = [
+      release("stale started release", repo.m1, 21),
+      release("unreachable matching release", repo.hotfixSha, 2, "1.72.0"),
+      release("newer completed release", repo.mainPrev, 1),
+    ];
+    expect(findBaseSha(candidates, repo.mainHead, deps, "1.72.0")).toEqual({
+      kind: "found",
+      sha: repo.m1,
+    });
   });
 });
 

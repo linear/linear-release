@@ -12,8 +12,27 @@ export type FindBaseShaDeps = {
  * release candidates (most-relevant first). Returns the first candidate whose
  * `commitSha` is reachable from `headSha` — the API can't disambiguate
  * concurrent release trains via SQL alone, so we use git as ground truth.
+ * When a syncing version is supplied, a reachable candidate with that version
+ * takes priority over the list order.
  */
-export function findBaseSha(candidates: Release[], headSha: string, deps: FindBaseShaDeps): BaseShaResult {
+export function findBaseSha(
+  candidates: Release[],
+  headSha: string,
+  deps: FindBaseShaDeps,
+  syncingVersion?: string,
+): BaseShaResult {
+  if (syncingVersion !== undefined) {
+    for (const candidate of candidates) {
+      if (candidate.version !== syncingVersion || !candidate.commitSha) {
+        continue;
+      }
+      if (deps.verifyAncestorReachable(candidate.commitSha, headSha)) {
+        verbose(`Using base SHA from release "${candidate.name}" (${candidate.commitSha.slice(0, 7)})`);
+        return { kind: "found", sha: candidate.commitSha };
+      }
+    }
+  }
+
   for (const candidate of candidates) {
     const sha = candidate.commitSha;
     if (!sha) {
