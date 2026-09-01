@@ -297,10 +297,12 @@ async function syncCommand(): Promise<{
 
   // Forward-only anchor: a rolled-back HEAD must not rewind a release's stored commit, or the
   // next sync would re-scan (and re-attach) work that already shipped.
-  const anchorAheadOfHead = findAnchorAheadOfHead(recentReleases, currentCommit.commit, {
-    isAncestor,
-    verifyAncestorReachable,
-  });
+  const anchorAheadOfHead = findAnchorAheadOfHead(
+    recentReleases,
+    currentCommit.commit,
+    { isAncestor, verifyAncestorReachable },
+    releaseVersion,
+  );
   if (anchorAheadOfHead) {
     info(
       `HEAD ${currentCommit.commit.slice(0, 7)} is behind the stored baseline ${anchorAheadOfHead.slice(0, 7)}; leaving the release commit unchanged`,
