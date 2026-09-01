@@ -431,7 +431,7 @@ async function syncCommand(): Promise<{
     links,
     documents,
     releaseNotes,
-    { omitCommitSha: Boolean(anchorAheadOfHead) },
+    { preserveStoredCommitSha: Boolean(anchorAheadOfHead) },
   );
   info(
     `Synced to release ${release.name} (${formatVersion(release)}): ${scanned}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
@@ -634,7 +634,7 @@ async function syncRelease(
   releaseLinks: ReleaseLink[],
   releaseDocuments: ReleaseDocument[],
   releaseNotesValue: ReleaseNotes | undefined,
-  options: { omitCommitSha: boolean },
+  options: { preserveStoredCommitSha: boolean },
 ): Promise<Release> {
   const currentSha = await getCurrentGitInfo().commit;
   if (!currentSha) {
@@ -667,7 +667,9 @@ async function syncRelease(
       input: {
         name: releaseName,
         version: releaseVersion,
-        commitSha: options.omitCommitSha ? undefined : currentSha,
+        commitSha: currentSha,
+        // Only sent when set, so normal syncs stay compatible with servers that predate the field.
+        preserveStoredCommitSha: options.preserveStoredCommitSha || undefined,
         issueReferences,
         revertedIssueReferences: revertedIssueReferences.length > 0 ? revertedIssueReferences : undefined,
         links: releaseLinks.length > 0 ? releaseLinks : undefined,
