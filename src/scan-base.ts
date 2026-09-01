@@ -79,6 +79,34 @@ export function selectAutomaticScanBase(
   };
 }
 
+export type AnchorComparisonDeps = FindBaseShaDeps & {
+  isAncestor: (sha: string, headSha: string) => boolean;
+};
+
+/**
+ * Returns the newest stored release anchor when the current HEAD is strictly behind it — the
+ * rollback case, where syncing HEAD as the release commit would rewind the pipeline's scan
+ * baseline and make the next sync re-scan (and re-attach) work that already shipped. Returns
+ * undefined when HEAD is at or ahead of the anchor, when no candidate carries a commit SHA, or
+ * when ancestry cannot be established (unrelated history, unreachable anchor).
+ */
+export function findAnchorAheadOfHead(
+  candidates: Release[],
+  headSha: string,
+  deps: AnchorComparisonDeps,
+): string | undefined {
+  const anchorSha = candidates.find((candidate) => candidate.commitSha)?.commitSha;
+  if (!anchorSha || anchorSha === headSha) {
+    return undefined;
+  }
+  // Cheap forward check first: an anchor that is an ancestor of HEAD means HEAD is at or ahead of
+  // it — the common case, answered without deepening a shallow clone.
+  if (deps.isAncestor(anchorSha, headSha)) {
+    return undefined;
+  }
+  return deps.verifyAncestorReachable(headSha, anchorSha) ? anchorSha : undefined;
+}
+
 export function assertBaseRefIsAncestor(
   baseRef: string,
   resolvedSha: string,
