@@ -79,6 +79,51 @@ export function selectAutomaticScanBase(
   };
 }
 
+export type AnchorComparisonDeps = FindBaseShaDeps & {
+  isAncestor: (sha: string, headSha: string) => boolean;
+};
+
+/**
+ * Returns the stored release anchor when the current HEAD is strictly behind it — the rollback
+ * case, where syncing HEAD as the release commit would rewind the pipeline's scan baseline and
+ * make the next sync re-scan (and re-attach) work that already shipped. When a syncing version is
+ * supplied and a candidate carries it, that release's commit alone decides, since it is the one
+ * the sync would overwrite; the candidate list is ordered by activity, so a release from another
+ * train can sit above it. Otherwise the newest stored anchor is used. Returns undefined when HEAD
+ * is at or ahead of the anchor, when no candidate carries a commit SHA, or when ancestry cannot
+ * be established (unrelated history, unreachable anchor).
+ */
+export function findAnchorAheadOfHead(
+  candidates: Release[],
+  headSha: string,
+  deps: AnchorComparisonDeps,
+  syncingVersion?: string,
+): string | undefined {
+  if (syncingVersion !== undefined) {
+    const versionedSha = candidates.find(
+      (candidate) => candidate.version === syncingVersion && candidate.commitSha,
+    )?.commitSha;
+    if (versionedSha) {
+      return anchorIfAheadOfHead(versionedSha, headSha, deps);
+    }
+  }
+
+  const anchorSha = candidates.find((candidate) => candidate.commitSha)?.commitSha;
+  return anchorSha ? anchorIfAheadOfHead(anchorSha, headSha, deps) : undefined;
+}
+
+function anchorIfAheadOfHead(anchorSha: string, headSha: string, deps: AnchorComparisonDeps): string | undefined {
+  if (anchorSha === headSha) {
+    return undefined;
+  }
+  // Cheap forward check first: an anchor that is an ancestor of HEAD means HEAD is at or ahead of
+  // it — the common case, answered without deepening a shallow clone.
+  if (deps.isAncestor(anchorSha, headSha)) {
+    return undefined;
+  }
+  return deps.verifyAncestorReachable(headSha, anchorSha) ? anchorSha : undefined;
+}
+
 export function assertBaseRefIsAncestor(
   baseRef: string,
   resolvedSha: string,

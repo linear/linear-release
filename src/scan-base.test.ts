@@ -9,6 +9,7 @@ import {
   assertBaseRefIsAncestor,
   BROAD_SCAN_COMMIT_THRESHOLD,
   evaluateScanRangeSize,
+  findAnchorAheadOfHead,
   getBroadScanWarning,
   SCAN_COMMIT_HARD_LIMIT,
   type ScanBase,
@@ -426,5 +427,91 @@ describe("evaluateScanRangeSize", () => {
 
   it("never blocks the scan when the count could not be determined", () => {
     expect(evaluateScanRangeSize(null, releaseBase)).toEqual({ degradeToCurrentCommit: false });
+  });
+});
+
+describe("findAnchorAheadOfHead", () => {
+  const anchor = "a".repeat(40);
+  const head = "b".repeat(40);
+
+  function release(commitSha?: string): Release {
+    return { id: "release-id", name: "release", createdAt: "2026-01-01T00:00:00.000Z", commitSha };
+  }
+
+  function deps(overrides: { isAncestor?: boolean; verifyAncestorReachable?: boolean }) {
+    return {
+      isAncestor: vi.fn().mockReturnValue(overrides.isAncestor ?? false),
+      verifyAncestorReachable: vi.fn().mockReturnValue(overrides.verifyAncestorReachable ?? false),
+    };
+  }
+
+  it("returns the anchor when HEAD is strictly behind it", () => {
+    const d = deps({ isAncestor: false, verifyAncestorReachable: true });
+    expect(findAnchorAheadOfHead([release(anchor)], head, d)).toBe(anchor);
+    expect(d.isAncestor).toHaveBeenCalledWith(anchor, head);
+    expect(d.verifyAncestorReachable).toHaveBeenCalledWith(head, anchor);
+  });
+
+  it("returns undefined when the anchor is an ancestor of HEAD, without the reachability walk", () => {
+    const d = deps({ isAncestor: true });
+    expect(findAnchorAheadOfHead([release(anchor)], head, d)).toBeUndefined();
+    expect(d.verifyAncestorReachable).not.toHaveBeenCalled();
+  });
+
+  it("returns undefined when HEAD equals the anchor", () => {
+    const d = deps({});
+    expect(findAnchorAheadOfHead([release(head)], head, d)).toBeUndefined();
+    expect(d.isAncestor).not.toHaveBeenCalled();
+  });
+
+  it("returns undefined when ancestry cannot be established in either direction", () => {
+    expect(findAnchorAheadOfHead([release(anchor)], head, deps({}))).toBeUndefined();
+  });
+
+  it("returns undefined when no candidate carries a commit SHA", () => {
+    expect(findAnchorAheadOfHead([release(undefined), release(undefined)], head, deps({}))).toBeUndefined();
+  });
+
+  it("compares against the first candidate with a commit SHA", () => {
+    const older = "c".repeat(40);
+    const d = deps({ isAncestor: false, verifyAncestorReachable: true });
+    expect(findAnchorAheadOfHead([release(undefined), release(anchor), release(older)], head, d)).toBe(anchor);
+    expect(d.isAncestor).toHaveBeenCalledWith(anchor, head);
+  });
+
+  it("prioritizes the syncing version's stored commit over a more recent release from another train", () => {
+    // Divergent hotfix release ranks first by activity; ancestry to it cannot be established,
+    // but HEAD is strictly behind the syncing version's own stored commit.
+    const hotfix = "d".repeat(40);
+    const d = {
+      isAncestor: vi.fn().mockReturnValue(false),
+      verifyAncestorReachable: vi.fn((sha: string, headSha: string) => headSha === anchor),
+    };
+    const candidates = [
+      { ...release(hotfix), version: "hotfix-1" },
+      { ...release(anchor), version: "v1.2.3" },
+    ];
+    expect(findAnchorAheadOfHead(candidates, head, d, "v1.2.3")).toBe(anchor);
+    expect(d.isAncestor).toHaveBeenCalledTimes(1);
+    expect(d.isAncestor).toHaveBeenCalledWith(anchor, head);
+  });
+
+  it("lets the syncing version's release decide alone when HEAD is at or ahead of it", () => {
+    const newer = "d".repeat(40);
+    const d = {
+      isAncestor: vi.fn((sha: string) => sha === anchor),
+      verifyAncestorReachable: vi.fn().mockReturnValue(true),
+    };
+    const candidates = [
+      { ...release(newer), version: "other" },
+      { ...release(anchor), version: "v1.2.3" },
+    ];
+    expect(findAnchorAheadOfHead(candidates, head, d, "v1.2.3")).toBeUndefined();
+    expect(d.verifyAncestorReachable).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the newest anchor when no candidate carries the syncing version", () => {
+    const d = deps({ isAncestor: false, verifyAncestorReachable: true });
+    expect(findAnchorAheadOfHead([release(anchor)], head, d, "v9.9.9")).toBe(anchor);
   });
 });

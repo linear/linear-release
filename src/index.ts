@@ -7,12 +7,14 @@ import {
   getCommitContextsBetweenShas,
   getCurrentGitInfo,
   getRemoteUrl,
+  isAncestor,
   resolveCommitRef,
   verifyAncestorReachable,
 } from "./git";
 import {
   assertBaseRefIsAncestor,
   evaluateScanRangeSize,
+  findAnchorAheadOfHead,
   getBroadScanWarning,
   ScanBase,
   selectAutomaticScanBase,
@@ -292,6 +294,21 @@ async function syncCommand(): Promise<{
   }
 
   const recentReleases = await getRecentReleases();
+
+  // Forward-only anchor: a rolled-back HEAD must not rewind a release's stored commit, or the
+  // next sync would re-scan (and re-attach) work that already shipped.
+  const anchorAheadOfHead = findAnchorAheadOfHead(
+    recentReleases,
+    currentCommit.commit,
+    { isAncestor, verifyAncestorReachable },
+    releaseVersion,
+  );
+  if (anchorAheadOfHead) {
+    info(
+      `HEAD ${currentCommit.commit.slice(0, 7)} is behind the stored baseline ${anchorAheadOfHead.slice(0, 7)}; leaving the release commit unchanged`,
+    );
+  }
+
   const scanBase = getScanBase(recentReleases, currentCommit.commit, releaseVersion);
   let latestSha = scanBase.sha;
   let inspectingOnlyCurrentCommit = false;
@@ -416,6 +433,7 @@ async function syncCommand(): Promise<{
     links,
     documents,
     releaseNotes,
+    { preserveStoredCommitSha: Boolean(anchorAheadOfHead) },
   );
   info(
     `Synced to release ${release.name} (${formatVersion(release)}): ${scanned}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
@@ -618,6 +636,7 @@ async function syncRelease(
   releaseLinks: ReleaseLink[],
   releaseDocuments: ReleaseDocument[],
   releaseNotesValue: ReleaseNotes | undefined,
+  options: { preserveStoredCommitSha: boolean },
 ): Promise<Release> {
   const currentSha = await getCurrentGitInfo().commit;
   if (!currentSha) {
@@ -651,6 +670,7 @@ async function syncRelease(
         name: releaseName,
         version: releaseVersion,
         commitSha: currentSha,
+        preserveStoredCommitSha: options.preserveStoredCommitSha,
         issueReferences,
         revertedIssueReferences: revertedIssueReferences.length > 0 ? revertedIssueReferences : undefined,
         links: releaseLinks.length > 0 ? releaseLinks : undefined,
