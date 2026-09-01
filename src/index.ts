@@ -668,8 +668,7 @@ async function syncRelease(
         name: releaseName,
         version: releaseVersion,
         commitSha: currentSha,
-        // Only sent when set, so normal syncs stay compatible with servers that predate the field.
-        preserveStoredCommitSha: options.preserveStoredCommitSha || undefined,
+        preserveStoredCommitSha: options.preserveStoredCommitSha,
         issueReferences,
         revertedIssueReferences: revertedIssueReferences.length > 0 ? revertedIssueReferences : undefined,
         links: releaseLinks.length > 0 ? releaseLinks : undefined,
