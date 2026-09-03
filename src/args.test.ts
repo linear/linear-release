@@ -38,6 +38,16 @@ describe("parseCLIArgs", () => {
     expect(result.releaseName).toBe("Release 1.2.0");
   });
 
+  it("parses --description", () => {
+    const result = parseCLIArgs(["--description", "Android + iOS; Shorebird patch 3"]);
+    expect(result.releaseDescription).toBe("Android + iOS; Shorebird patch 3");
+  });
+
+  it("preserves an empty --description", () => {
+    const result = parseCLIArgs(["--description", ""]);
+    expect(result.releaseDescription).toBe("");
+  });
+
   it("parses --stage", () => {
     const result = parseCLIArgs(["--stage", "production"]);
     expect(result.stageName).toBe("production");
