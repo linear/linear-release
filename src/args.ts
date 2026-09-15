@@ -29,6 +29,7 @@ export type ParsedCLIArgs = {
   includePaths: string[];
   includeSubjects: string | null;
   issuePattern: string | null;
+  detectBranchRefs: boolean;
   links: ReleaseLink[];
   documents: ReleaseDocumentSpec[];
   releaseNotes?: ReleaseNoteSpec;
@@ -137,6 +138,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
       "include-paths": { type: "string" },
       "include-subjects": { type: "string" },
       "issue-pattern": { type: "string" },
+      "no-branch-ref-detection": { type: "boolean", default: false },
       link: { type: "string", multiple: true },
       document: { type: "string", multiple: true },
       "document-file": { type: "string", multiple: true },
@@ -249,6 +251,7 @@ export function parseCLIArgs(argv: string[]): ParsedCLIArgs {
       : [],
     includeSubjects,
     issuePattern,
+    detectBranchRefs: !values["no-branch-ref-detection"],
     links,
     documents,
     releaseNotes,

@@ -391,8 +391,10 @@ export function extractBranchNameFromMergeMessage(message: string | null | undef
  * (whose key is not this commit's work), so a merge takes its branch name solely
  * from a parseable merge message. A regular commit may fall back to decorations —
  * the GitLab fast-forward / direct-push case where the key lives only in the ref.
+ * Disabling detectBranchRefs skips that fallback, including unrelated empty
+ * branches pointing at shipped commits, while preserving merge-message branches.
  */
-function parseCommitChunk(chunk: string): CommitContext {
+function parseCommitChunk(chunk: string, detectBranchRefs: boolean): CommitContext {
   const [sha, rawMessage, rawDecorations, rawParents] = chunk.split("\x1f");
   // Collapse runs of horizontal whitespace, but keep newlines so downstream
   // extractors can tell the title from the body and skip nested commit blocks.
@@ -405,7 +407,9 @@ function parseCommitChunk(chunk: string): CommitContext {
     .split(/\s+/)
     .filter((p) => /^[0-9a-f]{40}$/i.test(p));
   const isMerge = parents.length >= 2;
-  const branchName = extractBranchNameFromMergeMessage(message) ?? (isMerge ? null : extractBranchName(rawDecorations));
+  const branchName =
+    extractBranchNameFromMergeMessage(message) ??
+    (isMerge || !detectBranchRefs ? null : extractBranchName(rawDecorations));
 
   return { sha: sha.trim(), branchName, message, parents };
 }
@@ -454,7 +458,7 @@ export function ensureCommitAvailable(sha: string, cwd: string = process.cwd()):
   );
 }
 
-function runLog(rangeArgs: string[], cwd: string): Promise<CommitContext[]> {
+function runLog(rangeArgs: string[], cwd: string, detectBranchRefs = true): Promise<CommitContext[]> {
   const args = ["log", "--format=%H%x1f%B%x1f%D%x1f%P%x1e", ...rangeArgs];
 
   return new Promise((resolve, reject) => {
@@ -471,7 +475,7 @@ function runLog(rangeArgs: string[], cwd: string): Promise<CommitContext[]> {
         const record = stdoutBuffer.subarray(0, separatorIndex).toString("utf8");
         stdoutBuffer = stdoutBuffer.subarray(separatorIndex + 1);
         if (record.trim().length > 0) {
-          commits.push(parseCommitChunk(record));
+          commits.push(parseCommitChunk(record, detectBranchRefs));
         }
         separatorIndex = stdoutBuffer.indexOf(0x1e);
       }
@@ -507,7 +511,7 @@ function runLog(rangeArgs: string[], cwd: string): Promise<CommitContext[]> {
       }
       const trailingRecord = stdoutBuffer.toString("utf8");
       if (trailingRecord.trim().length > 0) {
-        commits.push(parseCommitChunk(trailingRecord));
+        commits.push(parseCommitChunk(trailingRecord, detectBranchRefs));
       }
       settled = true;
       resolve(commits);
@@ -574,14 +578,20 @@ function mergeDeliversToPaths(commit: CommitContext, pathspecArgs: string[], cwd
  * @param toSha - Ending commit SHA (inclusive)
  * @param options.includePaths - Glob patterns to filter commits by file paths (relative to repo root)
  * @param options.inspectSingleCommit - When SHAs match, inspect that one commit instead of treating it as an empty range
+ * @param options.detectBranchRefs - Infer source branches from ref decorations (defaults to true)
  * @param options.cwd - Working directory for git commands (defaults to process.cwd())
  */
 export async function getCommitContextsBetweenShas(
   fromSha: string,
   toSha: string,
-  options: { includePaths?: string[] | null; inspectSingleCommit?: boolean; cwd?: string } = {},
+  options: {
+    includePaths?: string[] | null;
+    inspectSingleCommit?: boolean;
+    detectBranchRefs?: boolean;
+    cwd?: string;
+  } = {},
 ): Promise<CommitContext[]> {
-  const { includePaths = null, inspectSingleCommit = true, cwd = process.cwd() } = options;
+  const { includePaths = null, inspectSingleCommit = true, detectBranchRefs = true, cwd = process.cwd() } = options;
 
   if (!SHA_PATTERN.test(fromSha)) {
     warn(`Invalid "from" SHA format "${fromSha}"`);
@@ -599,7 +609,7 @@ export async function getCommitContextsBetweenShas(
     ...(inspectingSingleCommit ? ["--no-walk", toSha] : [`${fromSha}..${toSha}`]),
     ...pathspecArgs,
   ];
-  const logged = await runLog(rangeArgs, cwd);
+  const logged = await runLog(rangeArgs, cwd, detectBranchRefs);
   const commits = pathspecArgs.length
     ? logged.filter((commit) => mergeDeliversToPaths(commit, pathspecArgs, cwd))
     : logged;
