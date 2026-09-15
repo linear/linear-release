@@ -71,6 +71,7 @@ Options:
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
   --include-subjects=<regex> Filter commits whose subject (first line) matches the regex
+  --no-branch-ref-detection  Ignore Git branch refs when attributing issues; keep commit-message detection
   --issue-pattern=<regex>    Extract issue IDs captured by group 1 from commit subjects (e.g. "\\[([A-Z]+-\\d+)\\]")
   --link <URL|Label=URL>       Add a link to the targeted release (repeatable)
   --document <Title=content> Attach a document to the release (repeatable, Title required)
@@ -133,6 +134,7 @@ const {
   includePaths,
   includeSubjects,
   issuePattern,
+  detectBranchRefs,
   links,
   documents: documentSpecs,
   releaseNotes: releaseNotesSpec,
@@ -357,6 +359,7 @@ async function syncCommand(): Promise<{
   const commits = await getCommitContextsBetweenShas(latestSha, currentCommit.commit, {
     includePaths: effectiveIncludePaths,
     inspectSingleCommit: scanBase.kind !== "base-ref",
+    detectBranchRefs,
   });
   const broadScanWarning = getBroadScanWarning(commits.length, scanBase);
   if (broadScanWarning) {

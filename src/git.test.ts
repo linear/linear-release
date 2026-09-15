@@ -7,6 +7,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { findBaseSha } from "./base-sha";
 import { findAnchorAheadOfHead } from "./scan-base";
 import { ConfigurationError } from "./provider";
+import { parseCLIArgs } from "./args";
+import { scanCommits } from "./scan";
 import {
   assertGitAvailable,
   buildPathspecArgs,
@@ -1268,6 +1270,92 @@ describe("merge commit handling", () => {
       const interior = result.find((c) => c.sha === ff.commits.feature);
       expect(interior?.branchName).toBe("user/REL-9-feature");
     });
+
+    it("can disable branch-only attribution for fast-forwarded work", async () => {
+      const commits = await getCommitContextsBetweenShas(ff.commits.base, ff.commits.tip, {
+        cwd: ff.cwd,
+        detectBranchRefs: false,
+      });
+      expect(commits.find((c) => c.sha === ff.commits.feature)?.branchName).toBeNull();
+      expect(scanCommits(commits.reverse()).issueReferences).toEqual([]);
+    });
+  });
+});
+
+describe("--no-branch-ref-detection", () => {
+  it.each(["tip", "interior", "single"] as const)("ignores an empty issue branch in a %s scan", async (position) => {
+    const { cwd, base } = initTempRepo({
+      prefix: "linear-release-empty-ref-",
+      dirs: [],
+      seedFile: { path: "README.md", content: "initial" },
+    });
+    try {
+      runGit('commit --allow-empty -m "feat(DEV-4617): add private S3 bucket (#1283)"', cwd);
+      runGit('commit --allow-empty -m "chore: bump version to 0.2.248 [skip ci]"', cwd);
+      const release = runGit("rev-parse HEAD", cwd);
+      runGit("tag v0.2.248", cwd);
+      runGit("branch DEV-4661", cwd);
+      runGit(`update-ref refs/remotes/origin/DEV-4661 ${release}`, cwd);
+      runGit(`update-ref refs/remotes/origin/main ${release}`, cwd);
+      if (position === "interior") {
+        runGit('commit --allow-empty -m "chore: later main work"', cwd);
+        runGit(`update-ref refs/remotes/origin/main ${runGit("rev-parse HEAD", cwd)}`, cwd);
+      }
+      const from = position === "single" ? release : base;
+      const defaultCommits = await getCommitContextsBetweenShas(from, release, { cwd });
+      expect(scanCommits(defaultCommits.reverse()).issueReferences.map((r) => r.identifier)).toEqual(["DEV-4661"]);
+
+      const { detectBranchRefs, issuePattern } = parseCLIArgs([
+        "sync",
+        "--no-branch-ref-detection",
+        "--issue-pattern=^[a-z]+\\(([A-Z]+-\\d+)\\)!?:",
+      ]);
+      const commits = await getCommitContextsBetweenShas(from, release, { cwd, detectBranchRefs });
+      const result = scanCommits(commits.reverse(), { issuePattern });
+      expect(result.issueReferences.map((r) => r.identifier)).toEqual(position === "single" ? [] : ["DEV-4617"]);
+      expect(result.prNumbers).toEqual(position === "single" ? [] : [1283]);
+      expect(result.debugSink.issues).not.toHaveProperty("DEV-4661");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves source branches recorded in merge messages", async () => {
+    const repo = createTempRepoWithMerge();
+    try {
+      const commits = await getCommitContextsBetweenShas(repo.commits.base, repo.commits.mergeCommit, {
+        cwd: repo.cwd,
+        detectBranchRefs: false,
+      });
+      const result = scanCommits(commits.reverse());
+      expect(result.issueReferences.map((r) => r.identifier)).toEqual(["ENG-123"]);
+      expect(result.prNumbers).toEqual([42]);
+      expect(result.debugSink.issues["ENG-123"]).toEqual([
+        expect.objectContaining({ sha: repo.commits.mergeCommit, source: "branch_name" }),
+      ]);
+    } finally {
+      rmSync(repo.cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores revert refs without suppressing message issue keys or PRs", async () => {
+    const { cwd, base } = initTempRepo({
+      prefix: "linear-release-revert-ref-",
+      dirs: [],
+      seedFile: { path: "README.md", content: "initial" },
+    });
+    try {
+      runGit('commit --allow-empty -m "Fixes ENG-123 (#42)"', cwd);
+      runGit("branch revert-42-ENG-123", cwd);
+      const head = runGit("rev-parse HEAD", cwd);
+      const commits = await getCommitContextsBetweenShas(base, head, { cwd, detectBranchRefs: false });
+      const result = scanCommits(commits.reverse());
+      expect(result.issueReferences.map((r) => r.identifier)).toEqual(["ENG-123"]);
+      expect(result.revertedIssueReferences).toEqual([]);
+      expect(result.prNumbers).toEqual([42]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });
 

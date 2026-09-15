@@ -134,6 +134,11 @@ describe("parseCLIArgs", () => {
     expect(parseCLIArgs([]).issuePattern).toBeNull();
   });
 
+  it("detects branch refs by default and allows opting out", () => {
+    expect(parseCLIArgs([]).detectBranchRefs).toBe(true);
+    expect(parseCLIArgs(["sync", "--no-branch-ref-detection"]).detectBranchRefs).toBe(false);
+  });
+
   it("returns --issue-pattern as the raw pattern string", () => {
     expect(parseCLIArgs(["--issue-pattern", "\\[([A-Z]+-\\d+)\\]"]).issuePattern).toBe("\\[([A-Z]+-\\d+)\\]");
   });
