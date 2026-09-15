@@ -71,7 +71,7 @@ Options:
   --stage=<stage>            Deployment stage (required for update)
   --include-paths=<paths>    Filter commits by file paths (comma-separated globs)
   --include-subjects=<regex> Filter commits whose subject (first line) matches the regex
-  --no-branch-ref-detection  Ignore Git branch refs when attributing issues; keep commit-message detection
+  --no-branch-ref-detection  Disable issue detection from Git branch pointers; preserve issue keys and source branches recorded in commit messages
   --issue-pattern=<regex>    Extract issue IDs captured by group 1 from commit subjects (e.g. "\\[([A-Z]+-\\d+)\\]")
   --link <URL|Label=URL>       Add a link to the targeted release (repeatable)
   --document <Title=content> Attach a document to the release (repeatable, Title required)
