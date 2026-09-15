@@ -1,12 +1,17 @@
+import * as childProcess from "node:child_process";
 import { execSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { findBaseSha } from "./base-sha";
+import { findAnchorAheadOfHead } from "./scan-base";
 import { ConfigurationError } from "./provider";
 import {
   assertGitAvailable,
   buildPathspecArgs,
+  commitExists,
+  verifyAncestorReachable,
   ensureCommitAvailable,
   extractBranchName,
   extractBranchNameFromMergeMessage,
@@ -19,7 +24,13 @@ import {
   isAncestor,
   normalizePathspec,
   resolveFirstSyncBoundary,
+  resolveCommitRef,
 } from "./git";
+
+// Keep the real processes while allowing individual tests to observe calls.
+vi.mock("node:child_process", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:child_process")>()),
+}));
 
 describe("normalizePathspec", () => {
   it("should strip leading ./", () => {
@@ -1324,5 +1335,111 @@ describe("countCommitsInRange", () => {
     } finally {
       rmSync(repo.cwd, { recursive: true, force: true });
     }
+  });
+});
+
+describe("Git input security", () => {
+  let cwd: string;
+  let head: string;
+  const git = (args: string[]) =>
+    childProcess.execFileSync("git", args, { cwd, encoding: "utf8", stdio: "pipe" }).trim();
+
+  beforeAll(() => {
+    cwd = mkdtempSync(join(tmpdir(), "linear-release-security-"));
+    git(["init"]);
+    git([
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "--allow-empty",
+      "-m",
+      "Initial",
+    ]);
+    head = git(["rev-parse", "HEAD"]);
+    git(["remote", "add", "origin", "https://example.com/repo.git"]);
+  });
+
+  afterAll(() => rmSync(cwd, { recursive: true, force: true }));
+
+  it.each(["$(touch MARKER)", "`touch MARKER`", "; touch MARKER; #", "| touch MARKER; #", "\ntouch MARKER\n#"])(
+    "never executes shell syntax: %s",
+    (syntax) => {
+      const checks = [
+        (value: string) => commitExists(value, cwd),
+        (value: string) => isAncestor(value, head, cwd),
+        (value: string) => isAncestor(head, value, cwd),
+        (value: string) => getCommitParents(value, cwd),
+        (value: string) => getRemoteUrl(value, cwd),
+      ];
+      for (const [index, check] of checks.entries()) {
+        const marker = `injected-${index}`;
+        check(head + syntax.replace("MARKER", marker));
+        expect(existsSync(join(cwd, marker))).toBe(false);
+      }
+    },
+  );
+
+  it("rejects poisoned release metadata in baseline selection and rollback checks", () => {
+    const marker = "release-injected";
+    const candidates = [{ id: "test", name: "test", createdAt: "2026-01-01", commitSha: `$(touch ${marker})${head}` }];
+    const deps = {
+      isAncestor: (a: string, b: string) => isAncestor(a, b, cwd),
+      verifyAncestorReachable: (a: string, b: string) => verifyAncestorReachable(a, b, cwd),
+    };
+    expect(findBaseSha(candidates, head, deps)).toEqual({ kind: "fallback" });
+    expect(findAnchorAheadOfHead(candidates, head, deps)).toBeUndefined();
+    expect(existsSync(join(cwd, marker))).toBe(false);
+  });
+
+  it.each(["", "HEAD", "--help", "abcdef", "a".repeat(41), "$(touch injected)", "abcdefg"])(
+    "rejects invalid SHAs before starting Git or fetching: %s",
+    (invalid) => {
+      const exec = vi.spyOn(childProcess, "execSync");
+      const execFile = vi.spyOn(childProcess, "execFileSync");
+      try {
+        expect(commitExists(invalid, cwd)).toBe(false);
+        expect(getCommitParents(invalid, cwd)).toEqual([]);
+        expect(isAncestor(invalid, head, cwd)).toBe(false);
+        expect(isAncestor(head, invalid, cwd)).toBe(false);
+        expect(verifyAncestorReachable(invalid, head, cwd)).toBe(false);
+        expect(verifyAncestorReachable(head, invalid, cwd)).toBe(false);
+        // Identical malformed inputs must not pass the equality shortcut.
+        expect(verifyAncestorReachable(invalid, invalid, cwd)).toBe(false);
+        expect(() => ensureCommitAvailable(invalid, cwd)).toThrow("Invalid commit SHA format");
+        expect(exec).not.toHaveBeenCalled();
+        expect(execFile).not.toHaveBeenCalled();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    },
+  );
+
+  it("does not interpret a base ref as a fetch option", () => {
+    const marker = "ref-injected";
+    git(["remote", "set-url", "origin", cwd]);
+    try {
+      expect(() => resolveCommitRef(`--upload-pack=touch ${marker}; git-upload-pack`, cwd)).toThrow(
+        "Could not resolve",
+      );
+      expect(existsSync(join(cwd, marker))).toBe(false);
+      expect(resolveCommitRef("HEAD", cwd)).toBe(head);
+    } finally {
+      git(["remote", "set-url", "origin", "https://example.com/repo.git"]);
+    }
+  });
+
+  it("preserves valid full and abbreviated SHAs and normal remote lookup", () => {
+    for (const sha of [head, head.slice(0, 7)]) {
+      expect(commitExists(sha, cwd)).toBe(true);
+      expect(isAncestor(sha, head, cwd)).toBe(true);
+      expect(verifyAncestorReachable(sha, head, cwd)).toBe(true);
+      expect(() => ensureCommitAvailable(sha, cwd)).not.toThrow();
+    }
+    expect(getRemoteUrl("origin", cwd)).toBe("https://example.com/repo.git");
+    expect(commitExists("0".repeat(40), cwd)).toBe(false);
   });
 });

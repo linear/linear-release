@@ -1,7 +1,9 @@
-import { execFileSync, execSync, spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { ConfigurationError } from "./provider";
 import type { CommitContext, GitInfo } from "./types";
 import { error as logError, verbose, warn } from "./log";
+
+const SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
 
 /** Preserves a leading "!" while cleaning the path for use as a git pathspec. */
 export function normalizePathspec(pattern: string): string {
@@ -58,7 +60,7 @@ export function buildPathspecArgs(includePaths: string[] | null): string[] {
  */
 export function assertGitAvailable(cwd: string = process.cwd()): void {
   try {
-    execSync("git --version", {
+    execFileSync("git", ["--version"], {
       cwd,
       stdio: ["ignore", "ignore", "pipe"],
     });
@@ -69,7 +71,7 @@ export function assertGitAvailable(cwd: string = process.cwd()): void {
   }
 
   try {
-    execSync("git rev-parse --is-inside-work-tree", {
+    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
       cwd,
       stdio: ["ignore", "ignore", "pipe"],
     });
@@ -84,7 +86,7 @@ export function getCurrentGitInfo(cwd: string = process.cwd()): GitInfo {
   let message: string | null = null;
 
   try {
-    branch = execSync("git rev-parse --abbrev-ref HEAD", {
+    branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
       cwd,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
@@ -94,7 +96,7 @@ export function getCurrentGitInfo(cwd: string = process.cwd()): GitInfo {
   } catch {}
 
   try {
-    commit = execSync("git rev-parse HEAD", {
+    commit = execFileSync("git", ["rev-parse", "HEAD"], {
       cwd,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
@@ -102,7 +104,7 @@ export function getCurrentGitInfo(cwd: string = process.cwd()): GitInfo {
   } catch {}
 
   try {
-    message = execSync("git log -1 --pretty=%B", {
+    message = execFileSync("git", ["log", "-1", "--pretty=%B"], {
       cwd,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
@@ -165,8 +167,11 @@ export function resolveFirstSyncBoundary(currentSha: string, cwd: string = proce
  * parents aren't in the local repo. Merges have 2+ entries.
  */
 export function getCommitParents(sha: string, cwd: string = process.cwd()): string[] {
+  if (!SHA_PATTERN.test(sha)) {
+    return [];
+  }
   try {
-    const out = execSync(`git log -1 --format=%P ${sha}`, {
+    const out = execFileSync("git", ["log", "-1", "--format=%P", sha], {
       cwd,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
@@ -196,8 +201,11 @@ export function countCommitsInRange(fromSha: string, toSha: string, cwd: string 
 }
 
 export function commitExists(sha: string, cwd: string = process.cwd()): boolean {
+  if (!SHA_PATTERN.test(sha)) {
+    return false;
+  }
   try {
-    execSync(`git cat-file -e ${sha}^{commit}`, {
+    execFileSync("git", ["cat-file", "-e", `${sha}^{commit}`], {
       cwd,
       stdio: ["ignore", "ignore", "ignore"],
     });
@@ -220,8 +228,11 @@ export function commitExists(sha: string, cwd: string = process.cwd()): boolean 
  * `verifyAncestorReachable`, which deepens and retries on shallow cutoffs.
  */
 export function isAncestor(sha: string, headSha: string, cwd: string = process.cwd()): boolean {
+  if (!SHA_PATTERN.test(sha) || !SHA_PATTERN.test(headSha)) {
+    return false;
+  }
   try {
-    execSync(`git merge-base --is-ancestor ${sha} ${headSha}`, {
+    execFileSync("git", ["merge-base", "--is-ancestor", sha, headSha], {
       cwd,
       stdio: ["ignore", "ignore", "ignore"],
     });
@@ -234,7 +245,7 @@ export function isAncestor(sha: string, headSha: string, cwd: string = process.c
 /** Returns true if the repository at `cwd` is a shallow clone, false otherwise. */
 export function isShallowRepository(cwd: string = process.cwd()): boolean {
   try {
-    const out = execSync("git rev-parse --is-shallow-repository", {
+    const out = execFileSync("git", ["rev-parse", "--is-shallow-repository"], {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
@@ -246,16 +257,16 @@ export function isShallowRepository(cwd: string = process.cwd()): boolean {
 }
 
 const DEEPEN_STRATEGIES = [
-  { command: "git fetch --deepen=200 origin", label: "Deepening by 200 commits" },
-  { command: "git fetch --deepen=500 origin", label: "Deepening by 500 commits" },
-  { command: "git fetch --unshallow origin", label: "Fetching full history" },
+  { args: ["fetch", "--deepen=200", "origin"], label: "Deepening by 200 commits" },
+  { args: ["fetch", "--deepen=500", "origin"], label: "Deepening by 500 commits" },
+  { args: ["fetch", "--unshallow", "origin"], label: "Fetching full history" },
 ];
 
 function deepenUntil(cwd: string, check: () => boolean): boolean {
-  for (const { command, label } of DEEPEN_STRATEGIES) {
+  for (const { args, label } of DEEPEN_STRATEGIES) {
     verbose(label);
     try {
-      execSync(command, { cwd, stdio: ["ignore", "ignore", "pipe"], timeout: 30_000 });
+      execFileSync("git", args, { cwd, stdio: ["ignore", "ignore", "pipe"], timeout: 30_000 });
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e);
       verbose(`Strategy "${label}" failed: ${reason}`);
@@ -280,6 +291,9 @@ function deepenUntil(cwd: string, check: () => boolean): boolean {
  * by deepening and retrying.
  */
 export function verifyAncestorReachable(sha: string, headSha: string, cwd: string = process.cwd()): boolean {
+  if (!SHA_PATTERN.test(sha) || !SHA_PATTERN.test(headSha)) {
+    return false;
+  }
   if (sha === headSha) {
     return true;
   }
@@ -303,8 +317,6 @@ export function verifyAncestorReachable(sha: string, headSha: string, cwd: strin
   return false;
 }
 
-const SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
-
 /**
  * Resolves a git ref, tag, or SHA to a full commit SHA.
  *
@@ -315,7 +327,7 @@ const SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
  */
 export function resolveCommitRef(ref: string, cwd: string = process.cwd()): string {
   const resolve = (target: string = ref) =>
-    execFileSync("git", ["rev-parse", "--verify", `${target}^{commit}`], {
+    execFileSync("git", ["rev-parse", "--verify", "--end-of-options", `${target}^{commit}`], {
       cwd,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
@@ -330,7 +342,7 @@ export function resolveCommitRef(ref: string, cwd: string = process.cwd()): stri
     }
     try {
       verbose(`Ref "${ref}" not in local history; fetching from origin`);
-      execFileSync("git", ["fetch", "origin", ref], {
+      execFileSync("git", ["fetch", "--", "origin", ref], {
         cwd,
         stdio: ["ignore", "ignore", "ignore"],
         timeout: 30_000,
@@ -421,6 +433,9 @@ export async function getCommitContext(sha: string, cwd: string = process.cwd())
  * Throws if the commit cannot be made available (e.g., not on the current branch).
  */
 export function ensureCommitAvailable(sha: string, cwd: string = process.cwd()): void {
+  if (!SHA_PATTERN.test(sha)) {
+    throw new Error(`Invalid commit SHA format "${sha}"`);
+  }
   if (commitExists(sha, cwd)) {
     return;
   }
@@ -604,7 +619,7 @@ export async function getCommitContextsBetweenShas(
 
 export function getRemoteUrl(remote: string = "origin", cwd: string = process.cwd()): string | null {
   try {
-    return execSync(`git remote get-url ${remote}`, {
+    return execFileSync("git", ["remote", "get-url", "--", remote], {
       cwd,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
