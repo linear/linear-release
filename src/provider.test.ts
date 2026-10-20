@@ -111,6 +111,40 @@ describe("resolveRepoInfo", () => {
     expect(resolveRepoInfo(detected, { LINEAR_VCS_PROVIDER: "GitLab" })?.provider).toBe("gitlab");
   });
 
+  it.each([
+    "https://origin.cursor.com/acme/repo.git",
+    "https://token@origin.cursor.com/acme/repo.git",
+    "git@origin.cursor.com:acme/repo.git",
+    "https://ORIGIN.CURSOR.COM:443/acme/repo.git",
+  ])("resolves Origin coordinates and web URL from %s", (url) => {
+    expect(resolveRepoInfo(parseRepoUrl(url), {})).toMatchObject({
+      provider: "origin",
+      owner: "acme",
+      name: "repo",
+      url: "https://cursor.com/codebase/acme/repo",
+    });
+  });
+
+  it.each(["https://origin.cursor.com.example.org/acme/repo.git", "https://cursor.com/acme/repo.git"])(
+    "does not infer Origin from %s",
+    (url) => {
+      expect(captureError(() => resolveRepoInfo(parseRepoUrl(url), {})).code).toBe("unknown-provider");
+    },
+  );
+
+  it("accepts an Origin override", () => {
+    expect(
+      resolveRepoInfo(parseRepoUrl("https://git.example.com/acme/repo.git"), { LINEAR_VCS_PROVIDER: "Origin" }),
+    ).toMatchObject({ provider: "origin", url: "https://cursor.com/codebase/acme/repo" });
+  });
+
+  it("allows mirrored repositories to keep using their GitHub provider override", () => {
+    expect(
+      resolveRepoInfo(parseRepoUrl("https://origin.cursor.com/acme/repo.git"), { LINEAR_VCS_PROVIDER: "github" })
+        ?.provider,
+    ).toBe("github");
+  });
+
   it("treats an empty override as unset", () => {
     const detected = parseRepoUrl("https://github.com/acme/repo.git");
     expect(resolveRepoInfo(detected, { LINEAR_VCS_PROVIDER: "" })?.provider).toBe("github");
