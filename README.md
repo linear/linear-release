@@ -154,12 +154,14 @@ linear-release update --stage="in review" --description="Highlights and rollout 
 
 ### Environment Variables
 
-| Variable              | Required | Description                                                      |
-| --------------------- | -------- | ---------------------------------------------------------------- |
-| `LINEAR_ACCESS_KEY`   | Yes      | Pipeline access key from Linear                                  |
-| `LINEAR_VCS_PROVIDER` | No       | Override VCS provider detection: `github`, `gitlab`, `bitbucket` |
+| Variable              | Required | Description                                                                |
+| --------------------- | -------- | -------------------------------------------------------------------------- |
+| `LINEAR_ACCESS_KEY`   | Yes      | Pipeline access key from Linear                                            |
+| `LINEAR_VCS_PROVIDER` | No       | Override VCS provider detection: `github`, `gitlab`, `bitbucket`, `origin` |
 
 The provider is detected from the remote hostname, or on GitLab CI from the job environment. Set `LINEAR_VCS_PROVIDER` when neither identifies the host (e.g. self-hosted GitHub Enterprise on a custom domain). When the provider can't be determined, `sync` exits with code `2` before syncing anything.
+
+Cursor Origin remotes (`origin.cursor.com`) use the `origin` provider. Release commit links point to `cursor.com/codebase`. PR references resolve against PRs already imported by Linear's Origin integration; direct issue identifiers work without a PR import. For an Origin mirror whose PRs are hosted on GitHub, set `LINEAR_VCS_PROVIDER=github`.
 
 ### CLI Options
 
@@ -332,7 +334,7 @@ linear-release sync --document "Deploy log=Deployed to production at $(date -u +
 1. **Fetches the latest release** from your Linear pipeline to determine the commit range
 2. **Scans commits** between the commit from the last release and the current commit
 3. **Extracts issue identifiers** from branch names and commit messages (e.g., `feat/ENG-123-add-feature`)
-4. **Detects pull/merge request numbers** from commit messages — GitHub `Title (#42)` / `Merge pull request #42`, and GitLab `See merge request <group>/<project>!42` trailers (emitted whenever a merge commit is created)
+4. **Detects pull/merge request numbers** from commit messages — GitHub and Origin `Title (#42)` / `Merge pull request #42`, and GitLab `See merge request <group>/<project>!42` trailers (emitted whenever a merge commit is created)
 5. **Syncs data to Linear** that adds issues and provided links to a newly created completed release (continuous pipelines) or the currently in-progress release (scheduled pipelines). PR/MR numbers are sent alongside the repository info, and Linear resolves them back to any issues linked to those PRs/MRs — so issues attached only via a PR/MR (not mentioned in a commit message or branch name) are still picked up.
 
 > [!NOTE]

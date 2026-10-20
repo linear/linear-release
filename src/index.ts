@@ -89,7 +89,7 @@ Options:
 
 Environment:
   LINEAR_ACCESS_KEY          Pipeline access key (required)
-  LINEAR_VCS_PROVIDER        Override VCS provider detection: github|gitlab|bitbucket
+  LINEAR_VCS_PROVIDER        Override VCS provider detection: github|gitlab|bitbucket|origin
 
 Examples:
   linear-release sync

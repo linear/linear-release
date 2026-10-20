@@ -57,6 +57,9 @@ function normalizeHost(host: string): string {
 }
 
 function hostToProvider(host: string): RepositoryProvider | null {
+  if (host === "origin.cursor.com") {
+    return "origin";
+  }
   if (host === "gitlab.com" || host.includes("gitlab")) {
     return "gitlab";
   }
@@ -71,7 +74,9 @@ function hostToProvider(host: string): RepositoryProvider | null {
 
 function parseProvider(value: string): RepositoryProvider | null {
   const provider = value.toLowerCase();
-  return provider === "github" || provider === "gitlab" || provider === "bitbucket" ? provider : null;
+  return provider === "github" || provider === "gitlab" || provider === "bitbucket" || provider === "origin"
+    ? provider
+    : null;
 }
 
 function inferProviderFromCI(
@@ -98,7 +103,7 @@ function resolveProvider(repoInfo: RepoInfo, env: Record<string, string | undefi
     const provider = parseProvider(override);
     if (!provider) {
       throw new ConfigurationError(
-        `Invalid LINEAR_VCS_PROVIDER value "${override}". Expected github, gitlab, or bitbucket.`,
+        `Invalid LINEAR_VCS_PROVIDER value "${override}". Expected github, gitlab, bitbucket, or origin.`,
         "invalid-provider-override",
       );
     }
@@ -108,7 +113,7 @@ function resolveProvider(repoInfo: RepoInfo, env: Record<string, string | undefi
   const provider = hostToProvider(host) ?? inferProviderFromCI(env, repoInfo, host);
   if (!provider) {
     throw new ConfigurationError(
-      `Could not determine the VCS provider for remote host "${host}".\nSet LINEAR_VCS_PROVIDER=github|gitlab|bitbucket in your CI environment.`,
+      `Could not determine the VCS provider for remote host "${host}".\nSet LINEAR_VCS_PROVIDER=github|gitlab|bitbucket|origin in your CI environment.`,
       "unknown-provider",
     );
   }
@@ -119,5 +124,14 @@ export function resolveRepoInfo(
   repoInfo: RepoInfo | null,
   env: Record<string, string | undefined> = process.env,
 ): ResolvedRepoInfo | null {
-  return repoInfo ? { ...repoInfo, provider: resolveProvider(repoInfo, env) } : null;
+  if (!repoInfo) {
+    return null;
+  }
+  const provider = resolveProvider(repoInfo, env);
+  // Origin's git transport host differs from its web UI, where release commit links point.
+  const url =
+    provider === "origin" && repoInfo.owner && repoInfo.name
+      ? `https://cursor.com/codebase/${repoInfo.owner}/${repoInfo.name}`
+      : repoInfo.url;
+  return { ...repoInfo, provider, url };
 }
