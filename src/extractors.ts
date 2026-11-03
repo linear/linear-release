@@ -135,8 +135,10 @@ const CONTRIBUTING_PHRASES = [
 /**
  * Core issue ID pattern without word boundaries — used inside the magic word
  * composite regex where surrounding context already provides boundaries.
+ * `(?![0-9])` stops the number from backtracking to a shorter prefix, which
+ * would otherwise let `ios-17.4` slip past the version lookahead as `ios-1`.
  */
-const ISSUE_ID_CORE = `\\w{1,${MAX_KEY_LENGTH}}-[0-9]{1,9}(?!\\.\\d)`;
+const ISSUE_ID_CORE = `\\w{1,${MAX_KEY_LENGTH}}-[0-9]{1,9}(?![0-9])(?!\\.\\d)`;
 
 /**
  * Build a regex that matches magic words followed by one or more issue identifiers.

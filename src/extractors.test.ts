@@ -117,6 +117,29 @@ describe("version suffix handling", () => {
     expect(ids(result)).toEqual(expected);
   });
 
+  // A magic word in front of a version must not match a shorter prefix (ios-17.4 -> IOS-1)
+  it.each([
+    ["Fix ios-17.4 keyboard crash", []],
+    ["Fix node-20.11 build", []],
+    ["Fixes ios-17.4.1 crash", []],
+    ["Fixes ENG-123, ENG-45.6", ["ENG-123"]],
+  ])("message %j should yield %j", (message, expected) => {
+    const result = extractLinearIssueIdentifiersForCommit({
+      sha: "abc",
+      branchName: null,
+      message,
+    });
+    expect(ids(result)).toEqual(expected);
+  });
+
+  it("does not report a version prefix as reverted", () => {
+    const result = extractRevertedIssueIdentifiersForCommit({
+      sha: "abc",
+      message: 'Revert "Fix ios-17.4 keyboard crash"',
+    });
+    expect(ids(result)).toEqual([]);
+  });
+
   // Legitimate identifiers should match
   it.each([
     ["john/ios-1641-introduce-a-proper-blockview", ["IOS-1641"]],
