@@ -1,3 +1,4 @@
+import { extractBranchNameFromMergeMessage } from "./git";
 import { verbose } from "./log";
 import { CommitContext } from "./types";
 
@@ -275,6 +276,15 @@ export function extractLinearIssueIdentifiersForCommit(
     );
   }
 
+  const revertedMerge = parseRevertedMergeBranch(commit.message ?? "");
+  if (revertedMerge && revertedMerge.depth % 2 === 0) {
+    for (const match of matchAllIdentifiers(revertedMerge.inner)) {
+      if (!found.has(match.identifier)) {
+        found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
+      }
+    }
+  }
+
   // In a revert, the inner subject's identifiers are reverted, not added — but
   // the revert author's body (e.g. `Fixes LIN-N`) describes what the revert
   // itself closes, so scan that. Strip squash dumps first to avoid attributing
@@ -470,6 +480,16 @@ function parseRevertMessage(message: string): {
   return { depth, inner: text, afterTitle: outerAfter + body };
 }
 
+/** Branch and combined revert depth for `Revert "Merge pull request #N from org/branch"`, or null. */
+function parseRevertedMergeBranch(message: string): { depth: number; inner: string } | null {
+  const { depth: messageDepth, inner } = parseRevertMessage(message);
+  if (messageDepth === 0) return null;
+  const branch = extractBranchNameFromMergeMessage(inner);
+  if (!branch) return null;
+  const { depth: branchDepth, inner: strippedBranch } = parseRevertBranch(branch);
+  return { depth: messageDepth + branchDepth, inner: strippedBranch };
+}
+
 /**
  * Unwrap Revert "..." layers from a commit message and count nesting depth.
  * e.g. 'Revert "Revert "DRIVE-320: Fix""' → { depth: 2, inner: "DRIVE-320: Fix" }
@@ -501,10 +521,21 @@ export function extractRevertedIssueIdentifiersForCommit(commit: CommitContext):
   const { depth: branchDepth, inner: originalBranch } = parseRevertBranch(commit.branchName ?? "");
   const { depth: messageDepth, inner: innerMessage } = parseRevertMessage(commit.message ?? "");
 
+  const revertedMerge = parseRevertedMergeBranch(commit.message ?? "");
+  const revertsMergedBranch = revertedMerge !== null && revertedMerge.depth % 2 === 1;
+
   // At least one of branch/message must have odd depth (i.e., be a revert) to extract
-  if (branchDepth % 2 === 0 && messageDepth % 2 === 0) return [];
+  if (branchDepth % 2 === 0 && messageDepth % 2 === 0 && !revertsMergedBranch) return [];
 
   const found = new Map<string, ExtractedIdentifier>();
+
+  if (revertsMergedBranch) {
+    for (const match of matchAllIdentifiers(revertedMerge.inner)) {
+      if (!found.has(match.identifier)) {
+        found.set(match.identifier, { identifier: match.identifier, source: "commit_message" });
+      }
+    }
+  }
 
   if (branchDepth % 2 === 1) {
     for (const match of matchAllIdentifiers(originalBranch)) {

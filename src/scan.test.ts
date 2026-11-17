@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { extractBranchNameFromMergeMessage } from "./git";
 import * as log from "./log";
 import { scanCommits } from "./scan";
 import { CommitContext } from "./types";
@@ -77,6 +78,55 @@ describe("scanCommits", () => {
       ];
       const result = scanCommits(commits, {});
       expect(ids(result.issueReferences)).toEqual([]);
+      expect(ids(result.revertedIssueReferences)).toEqual([]);
+    });
+  });
+
+  describe("git revert of a merge commit", () => {
+    const merge = "Merge pull request #123 from org/user/eng-100-add-thing\n\nAdd thing";
+    const revert =
+      'Revert "Merge pull request #123 from org/user/eng-100-add-thing"\n\nThis reverts commit aaaa, reversing\nchanges made to bbbb.';
+    const commit = (sha: string, message: string): CommitContext => ({
+      sha,
+      message,
+      branchName: extractBranchNameFromMergeMessage(message),
+    });
+
+    it("reverts the merged branch's identifier", () => {
+      const result = scanCommits([commit("r1", revert)], {});
+      expect(ids(result.issueReferences)).toEqual([]);
+      expect(ids(result.revertedIssueReferences)).toEqual(["ENG-100"]);
+      expect(result.prNumbers).toEqual([]);
+    });
+
+    it("reverts when the revert is squash-merged", () => {
+      const result = scanCommits(
+        [commit("r1", 'Revert "Merge pull request #123 from org/user/eng-100-add-thing" (#456)')],
+        {},
+      );
+      expect(ids(result.issueReferences)).toEqual([]);
+      expect(ids(result.revertedIssueReferences)).toEqual(["ENG-100"]);
+    });
+
+    it("reverts when the merge and its revert ship together", () => {
+      const result = scanCommits([commit("a1", merge), commit("r1", revert)], {});
+      expect(ids(result.issueReferences)).toEqual([]);
+      expect(ids(result.revertedIssueReferences)).toEqual(["ENG-100"]);
+    });
+
+    it("re-adds on a revert of the revert", () => {
+      const reRevert = `Revert "${revert.split("\n")[0]}"\n\nThis reverts commit cccc.`;
+      const result = scanCommits([commit("ra1", reRevert)], {});
+      expect(ids(result.issueReferences)).toEqual(["ENG-100"]);
+      expect(ids(result.revertedIssueReferences)).toEqual([]);
+    });
+
+    it("re-adds on a revert of a revert PR's merge", () => {
+      const result = scanCommits(
+        [commit("ra1", 'Revert "Merge pull request #456 from org/revert-123-user/eng-100-add-thing"')],
+        {},
+      );
+      expect(ids(result.issueReferences)).toEqual(["ENG-100"]);
       expect(ids(result.revertedIssueReferences)).toEqual([]);
     });
   });

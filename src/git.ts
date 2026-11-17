@@ -367,17 +367,17 @@ export function extractBranchNameFromMergeMessage(message: string | null | undef
     return null;
   }
   // GitHub: "Merge pull request #123 from owner/branch-name"
-  const githubMatch = message.match(/Merge pull request #\d+ from [^/]+\/(\S+)/i);
+  const githubMatch = message.match(/^Merge pull request #\d+ from [^/\s]+\/(\S+)/i);
   if (githubMatch?.[1]) {
     return githubMatch[1];
   }
   // GitLab: "Merge branch 'branch-name' into 'target'" or "Merge branch 'branch-name'"
-  const gitlabMatch = message.match(/Merge branch '([^']+)'/i);
+  const gitlabMatch = message.match(/^Merge branch '([^']+)'/i);
   if (gitlabMatch?.[1]) {
     return gitlabMatch[1];
   }
   // Bitbucket: "Merged in feature/ENG-123-fix-auth (pull request #42)"
-  const bitbucketMatch = message.match(/Merged in (\S+) \(pull request #\d+\)/i);
+  const bitbucketMatch = message.match(/^Merged in (\S+) \(pull request #\d+\)/i);
   return bitbucketMatch?.[1] ?? null;
 }
 
