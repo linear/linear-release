@@ -233,6 +233,10 @@ describe("extractBranchNameFromMergeMessage", () => {
     it("should return null for non-merge messages", () => {
       expect(extractBranchNameFromMergeMessage("Some regular commit")).toBeNull();
       expect(extractBranchNameFromMergeMessage("Fix bug (#123)")).toBeNull();
+      expect(
+        extractBranchNameFromMergeMessage("Big change (#9)\n\n* Merge pull request #5 from org/eng-5-old"),
+      ).toBeNull();
+      expect(extractBranchNameFromMergeMessage('Revert "Merge pull request #5 from org/eng-5-old"')).toBeNull();
     });
 
     it("should return null for null or undefined input", () => {
