@@ -692,9 +692,18 @@ describe("extractRevertedIssueIdentifiersForCommit", () => {
   it("ignores identifier in unwrapped message without magic word", () => {
     const result = extractRevertedIssueIdentifiersForCommit({
       sha: "abc",
-      message: 'Revert "DRIVE-320: Fix memory leak in background location service"',
+      message: 'Revert "Update DRIVE-320 memory leak handling"',
     });
     expect(ids(result)).toEqual([]);
+  });
+
+  it.each([
+    'Revert "DRIVE-320: Fix memory leak in background location service"',
+    'Revert "[DRIVE-320] Fix memory leak"',
+    'Revert "(DRIVE-320) Fix memory leak"',
+  ])("extracts identifier from the subject convention of the reverted commit: %s", (message) => {
+    const result = extractRevertedIssueIdentifiersForCommit({ sha: "abc", message });
+    expect(ids(result)).toEqual(["DRIVE-320"]);
   });
 
   it("extracts identifier from revert branch name", () => {
