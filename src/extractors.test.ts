@@ -689,10 +689,18 @@ describe("extractRevertedIssueIdentifiersForCommit", () => {
     expect(ids(result)).toEqual(["DRIVE-320"]);
   });
 
-  it("ignores identifier in unwrapped message without magic word", () => {
+  it("extracts identifier from unwrapped subject prefix", () => {
     const result = extractRevertedIssueIdentifiersForCommit({
       sha: "abc",
       message: 'Revert "DRIVE-320: Fix memory leak in background location service"',
+    });
+    expect(ids(result)).toEqual(["DRIVE-320"]);
+  });
+
+  it("ignores identifier in unwrapped message without magic word or subject prefix", () => {
+    const result = extractRevertedIssueIdentifiersForCommit({
+      sha: "abc",
+      message: 'Revert "Fix memory leak, see DRIVE-320"',
     });
     expect(ids(result)).toEqual([]);
   });
