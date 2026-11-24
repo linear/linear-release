@@ -253,7 +253,7 @@ export function extractLinearIssueIdentifiersForCommit(
 
   // Odd depth = revert; even depth = non-revert or revert-of-revert (re-add).
   const { depth: branchDepth, inner: strippedBranch } = parseRevertBranch(commit.branchName ?? "");
-  const { depth: messageDepth, afterTitle } = parseRevertMessage(commit.message ?? "");
+  const { depth: messageDepth, inner: innerSubject, afterTitle } = parseRevertMessage(commit.message ?? "");
 
   const found = new Map<string, ExtractedIdentifier>();
 
@@ -291,8 +291,11 @@ export function extractLinearIssueIdentifiersForCommit(
   // already-shipped references to this commit.
   const scanTarget = messageDepth % 2 === 1 ? afterTitle : (commit.message ?? "");
   const message = stripSquashBlock(scanTarget);
+  // A revert of a revert re-adds the original subject's prefix (`[ENG-5] ...`),
+  // which only matches once the `Revert "` layers are unwrapped.
+  const subjectTarget = messageDepth > 0 && messageDepth % 2 === 0 ? innerSubject : message;
   if (message.length > 0) {
-    for (const match of [...matchCommonSubjectPatterns(message), ...matchMagicWordIdentifiers(message)]) {
+    for (const match of [...matchCommonSubjectPatterns(subjectTarget), ...matchMagicWordIdentifiers(message)]) {
       if (!found.has(match.identifier)) {
         found.set(match.identifier, {
           identifier: match.identifier,
@@ -548,11 +551,12 @@ export function extractRevertedIssueIdentifiersForCommit(commit: CommitContext):
     }
   }
 
-  // Use magic-word gating on the inner message, same as the add path, to avoid
-  // false positives from generic word-number tokens (e.g. "Bump v1-2 to v1-3").
+  // Match the inner subject the same way the add path matched the original
+  // commit: subject prefixes and magic words, not bare word-number tokens
+  // (e.g. "Bump v1-2 to v1-3").
   if (messageDepth % 2 === 1) {
     const innerStripped = stripSquashBlock(innerMessage);
-    for (const match of matchMagicWordIdentifiers(innerStripped)) {
+    for (const match of [...matchCommonSubjectPatterns(innerStripped), ...matchMagicWordIdentifiers(innerStripped)]) {
       if (!found.has(match.identifier)) {
         found.set(match.identifier, {
           identifier: match.identifier,

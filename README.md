@@ -268,7 +268,7 @@ linear-release sync --issue-pattern='\b([A-Z]+-\d+)\b'
 # Also matches both IDs: fix(scope): color button red DEV-123 DEV-124
 ```
 
-Identifiers that do not exist in the workspace are ignored server-side, so the broad recipe is safe but can be noisy (for example, it also matches `UTF-8`). Reverting a commit whose issues were linked only through `--issue-pattern` does not un-link them, just as with the built-in subject patterns.
+Identifiers that do not exist in the workspace are ignored server-side, so the broad recipe is safe but can be noisy (for example, it also matches `UTF-8`). Reverting a commit whose issues were linked only through `--issue-pattern` does not un-link them.
 
 ### Disable branch ref detection
 

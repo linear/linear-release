@@ -131,6 +131,24 @@ describe("scanCommits", () => {
     });
   });
 
+  describe.each(["[ENG-5] Add thing", "(ENG-5) Add thing", "ENG-5: Add thing"])("revert of %s", (subject) => {
+    const add = { sha: "a1", message: subject };
+    const revert = { sha: "r1", message: `Revert "${subject}"` };
+    const reAdd = { sha: "rr1", message: `Revert "Revert "${subject}""` };
+
+    it("reverts the issue", () => {
+      const result = scanCommits([add, revert], {});
+      expect(result.issueReferences).toEqual([]);
+      expect(result.revertedIssueReferences).toEqual([{ identifier: "ENG-5", commitSha: "r1" }]);
+    });
+
+    it("re-adds the issue on a revert of the revert", () => {
+      const result = scanCommits([add, revert, reAdd], {});
+      expect(result.issueReferences).toEqual([{ identifier: "ENG-5", commitSha: "rr1" }]);
+      expect(result.revertedIssueReferences).toEqual([]);
+    });
+  });
+
   describe("last-write-wins edge cases", () => {
     it("separates different issues into added and reverted lists", () => {
       const commits: CommitContext[] = [
