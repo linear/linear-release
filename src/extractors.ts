@@ -253,7 +253,7 @@ export function extractLinearIssueIdentifiersForCommit(
 
   // Odd depth = revert; even depth = non-revert or revert-of-revert (re-add).
   const { depth: branchDepth, inner: strippedBranch } = parseRevertBranch(commit.branchName ?? "");
-  const { depth: messageDepth, afterTitle } = parseRevertMessage(commit.message ?? "");
+  const { depth: messageDepth, inner: revertedTitle, afterTitle } = parseRevertMessage(commit.message ?? "");
 
   const found = new Map<string, ExtractedIdentifier>();
 
@@ -292,7 +292,8 @@ export function extractLinearIssueIdentifiersForCommit(
   const scanTarget = messageDepth % 2 === 1 ? afterTitle : (commit.message ?? "");
   const message = stripSquashBlock(scanTarget);
   if (message.length > 0) {
-    for (const match of [...matchCommonSubjectPatterns(message), ...matchMagicWordIdentifiers(message)]) {
+    const subjectSource = messageDepth > 0 && messageDepth % 2 === 0 ? revertedTitle : message;
+    for (const match of [...matchCommonSubjectPatterns(subjectSource), ...matchMagicWordIdentifiers(message)]) {
       if (!found.has(match.identifier)) {
         found.set(match.identifier, {
           identifier: match.identifier,
@@ -552,7 +553,7 @@ export function extractRevertedIssueIdentifiersForCommit(commit: CommitContext):
   // false positives from generic word-number tokens (e.g. "Bump v1-2 to v1-3").
   if (messageDepth % 2 === 1) {
     const innerStripped = stripSquashBlock(innerMessage);
-    for (const match of matchMagicWordIdentifiers(innerStripped)) {
+    for (const match of [...matchCommonSubjectPatterns(innerStripped), ...matchMagicWordIdentifiers(innerStripped)]) {
       if (!found.has(match.identifier)) {
         found.set(match.identifier, {
           identifier: match.identifier,

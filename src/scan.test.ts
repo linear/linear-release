@@ -71,6 +71,27 @@ describe("scanCommits", () => {
       expect(ids(result.revertedIssueReferences)).toEqual(["DRIVE-320"]);
     });
 
+    it("reverts identifier from a bracketed subject", () => {
+      const commits: CommitContext[] = [
+        { sha: "a1", message: "[ENG-5] Add thing" },
+        { sha: "r1", message: 'Revert "[ENG-5] Add thing"' },
+      ];
+      const result = scanCommits(commits, {});
+      expect(ids(result.issueReferences)).toEqual([]);
+      expect(ids(result.revertedIssueReferences)).toEqual(["ENG-5"]);
+    });
+
+    it("re-adds identifier from a bracketed subject on revert-of-revert", () => {
+      const commits: CommitContext[] = [
+        { sha: "a1", message: "[ENG-5] Add thing" },
+        { sha: "r1", message: 'Revert "[ENG-5] Add thing"' },
+        { sha: "r2", message: 'Revert "Revert "[ENG-5] Add thing""' },
+      ];
+      const result = scanCommits(commits, {});
+      expect(ids(result.issueReferences)).toEqual(["ENG-5"]);
+      expect(ids(result.revertedIssueReferences)).toEqual([]);
+    });
+
     it("ignores version-like tokens (v1-2) without magic word", () => {
       const commits: CommitContext[] = [
         { sha: "a1", message: "Bump v1-2 to v1-3" },
