@@ -77,7 +77,7 @@ export type GitInfo = {
   message: string | null;
 };
 
-export type RepositoryProvider = "github" | "gitlab" | "bitbucket";
+export type RepositoryProvider = "github" | "gitlab" | "bitbucket" | "origin";
 
 export type RepoInfo = {
   owner: string | null;
