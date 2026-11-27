@@ -21,6 +21,7 @@ import {
   shouldCreateReleaseForScan,
 } from "./scan-base";
 import { scanCommits } from "./scan";
+import { getEffectiveSubject } from "./extractors";
 import {
   Release,
   AccessKeyPipelineSettingsResponse,
@@ -267,8 +268,11 @@ async function apiRequest<T>(query: string, variables?: Record<string, unknown>)
   return withRetry(() => linearClient.client.rawRequest(query, variables)) as Promise<T>;
 }
 
+const TROUBLESHOOTING_URL = "https://github.com/linear/linear-release#troubleshooting";
+
 async function syncCommand(): Promise<{
-  release: { id: string; name: string; version?: string; url?: string };
+  release: { id: string; name: string; version?: string; url?: string } | null;
+  unreferencedCommitCount: number;
 } | null> {
   logEnvironmentSummary();
 
@@ -407,7 +411,7 @@ async function syncCommand(): Promise<{
   // git log returns newest-first; scanCommits needs chronological (oldest-first) for last-write-wins
   commits.reverse();
 
-  const { issueReferences, revertedIssueReferences, prNumbers, debugSink } = scanCommits(commits, {
+  const { issueReferences, revertedIssueReferences, prNumbers, unreferencedCommits, debugSink } = scanCommits(commits, {
     includePaths: effectiveIncludePaths,
     includeSubjects,
     issuePattern,
@@ -417,6 +421,21 @@ async function syncCommand(): Promise<{
 
   if (revertedIssueReferences.length > 0) {
     info(`Reverted issue keys: ${revertedIssueReferences.map((f) => f.identifier).join(", ")}`);
+  }
+
+  const unreferencedCommitCount = unreferencedCommits.length;
+  if (
+    unreferencedCommitCount > 0 &&
+    issueReferences.length === 0 &&
+    revertedIssueReferences.length === 0 &&
+    prNumbers.length === 0
+  ) {
+    warn(
+      `${unreferencedCommitCount} ${pluralize(unreferencedCommitCount, "commit")} in range had no issue ID, branch reference or PR/MR reference, so no issues were linked. If you use GitLab fast-forward merges or a custom merge commit template, issues linked only through MR descriptions can't be detected. See ${TROUBLESHOOTING_URL}`,
+    );
+    for (const commit of unreferencedCommits) {
+      verbose(`No reference found in commit ${commit.sha.slice(0, 7)}: ${getEffectiveSubject(commit.message)}`);
+    }
   }
 
   const issueIds = issueReferences.map((f) => f.identifier);
@@ -431,7 +450,7 @@ async function syncCommand(): Promise<{
     info(
       `[dry-run] Would sync release ${targetName} (${versionPart}): ${scanned}${formatDescriptionSummary(releaseDescription)}${formatLinkSummary(links)}${formatDocumentsSummary(documents)}${formatReleaseNotesSummary(releaseNotes)}`,
     );
-    return null;
+    return { release: null, unreferencedCommitCount };
   }
 
   const release = await syncRelease(
@@ -462,6 +481,7 @@ async function syncCommand(): Promise<{
       version: release.version,
       url: release.url,
     },
+    unreferencedCommitCount,
   };
 }
 
@@ -846,7 +866,8 @@ async function main() {
   assertGitAvailable();
 
   let result: {
-    release: { id: string; name: string; version?: string; url?: string };
+    release: { id: string; name: string; version?: string; url?: string } | null;
+    unreferencedCommitCount?: number;
   } | null = null;
 
   switch (command) {

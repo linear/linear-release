@@ -201,10 +201,12 @@ Use `--json` to get structured output for scripting.
 
 ```bash
 linear-release sync --json
-# => {"release":{"id":"...","name":"Release 1.2.0","version":"1.2.0","url":"https://linear.app/..."}}
+# => {"release":{"id":"...","name":"Release 1.2.0","version":"1.2.0","url":"https://linear.app/..."},"unreferencedCommitCount":0}
 ```
 
 When no release is created (e.g. no commits found), `--json` outputs `{"release":null}`.
+
+For `sync`, `unreferencedCommitCount` is the number of scanned commits with no detectable issue ID, branch reference or PR/MR reference. CI can use it to alert when a sync links nothing (see [Troubleshooting](#troubleshooting)).
 
 ### Log Levels
 
@@ -360,7 +362,7 @@ When `--base-ref` is provided, it overrides automatic base selection for that ru
 - **Operation timed out**: the CLI aborts after 60 seconds by default. For large repositories or slow networks, increase the limit with `--timeout=120`.
 - **`git` not on PATH**: the CLI shells out to `git`. Install it in your CI image (e.g. `apt-get install -y git` on Debian/Ubuntu).
 - **No `.git` directory found**: the CLI must run inside a full clone. On GitLab CI, set `GIT_STRATEGY: clone` (not `none` or `empty`) and `GIT_DEPTH: 0` on the linear-release job.
-- **GitLab MR numbers are not linked**: linear-release reads the `See merge request <group>/<project>!N` trailer that GitLab adds to merge commits. Projects configured with `merge_method: fast-forward` produce no merge commit and no trailer, so the MR number cannot be recovered from the message. To still link the change to its Linear issue, include the identifier in the branch name (e.g. `username/eng-123-add-feature`) or in the commit message with a magic word (e.g. `Fixes ENG-123`).
+- **GitLab MR numbers are not linked**: linear-release reads the `See merge request <group>/<project>!N` trailer that GitLab adds to merge commits. Projects configured with `merge_method: fast-forward` produce no merge commit and no trailer, so the MR number cannot be recovered from the message. The same applies to custom merge commit templates that omit `%{reference}`. When no commit in the range has a detectable reference, `sync` prints a warning and reports the count as `unreferencedCommitCount` in `--json` output. To still link the change to its Linear issue, include the identifier in the branch name (e.g. `username/eng-123-add-feature`) or in the commit message with a magic word (e.g. `Fixes ENG-123`).
 - **Binary fails to start with "not found" or loader errors**: the prebuilt binary is glibc-linked and will not run on Alpine/musl images. Switch to a Debian/Ubuntu base (`debian:bookworm-slim`, `ubuntu:24.04`).
 
 ## License

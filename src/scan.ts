@@ -25,6 +25,8 @@ export function scanCommits(
   issueReferences: IssueReference[];
   revertedIssueReferences: IssueReference[];
   prNumbers: number[];
+  /** Inspected commits that yielded no issue identifier (added or reverted) and no PR/MR number. */
+  unreferencedCommits: CommitContext[];
   debugSink: DebugSink;
 } {
   const { includePaths = null, includeSubjects = null, issuePattern = null } = options;
@@ -38,6 +40,7 @@ export function scanCommits(
   const revertedRefs = new Map<string, IssueReference>();
 
   const prNumbersSet = new Set<number>();
+  const unreferencedCommits: CommitContext[] = [];
   const debugSink: DebugSink = {
     inspectedShas: [],
     issues: {},
@@ -58,6 +61,7 @@ export function scanCommits(
     }
 
     debugSink.inspectedShas.push(commit.sha);
+    let hasReference = false;
 
     if (issuePatternSubjectRegex?.test(getEffectiveSubject(commit.message))) {
       issuePatternMatchedSubject = true;
@@ -73,6 +77,7 @@ export function scanCommits(
         value: source === "branch_name" ? (commit.branchName ?? "") : (commit.message ?? ""),
       });
 
+      hasReference = true;
       lastAction.set(identifier, "reverted");
       revertedRefs.set(identifier, { identifier, commitSha: commit.sha });
       verbose(`Detected reverted issue key ${identifier} from commit ${commit.sha}`);
@@ -93,6 +98,7 @@ export function scanCommits(
         value: source === "branch_name" ? (commit.branchName ?? "") : (commit.message ?? ""),
       });
 
+      hasReference = true;
       lastAction.set(identifier, "added");
       addedRefs.set(identifier, { identifier, commitSha: commit.sha });
       verbose(
@@ -101,6 +107,7 @@ export function scanCommits(
     }
 
     for (const prNumber of extractPullRequestNumbersForCommit(commit)) {
+      hasReference = true;
       if (!prNumbersSet.has(prNumber)) {
         prNumbersSet.add(prNumber);
         const prSource: PullRequestSource = {
@@ -111,6 +118,10 @@ export function scanCommits(
         debugSink.pullRequests.push(prSource);
         verbose(`Found pull request number ${prNumber} in commit ${commit.sha}`);
       }
+    }
+
+    if (!hasReference) {
+      unreferencedCommits.push(commit);
     }
   }
 
@@ -134,6 +145,7 @@ export function scanCommits(
     issueReferences,
     revertedIssueReferences,
     prNumbers: Array.from(prNumbersSet),
+    unreferencedCommits,
     debugSink,
   };
 }
