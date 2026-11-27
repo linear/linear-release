@@ -341,4 +341,30 @@ describe("scanCommits", () => {
       warn.mockRestore();
     });
   });
+
+  describe("unreferenced commits", () => {
+    it("reports commits with no issue, branch or PR/MR reference", () => {
+      const commits: CommitContext[] = [
+        // GitLab fast-forward merge: no merge commit, no `See merge request` trailer
+        { sha: "ff1", message: "Add charlie file" },
+        { sha: "mr1", message: "Merge branch 'feature' into 'main'\n\nSee merge request group/project!42" },
+        { sha: "key1", message: "Fixes ENG-123" },
+        { sha: "br1", branchName: "user/eng-456-thing", message: "Thing" },
+        { sha: "rv1", message: 'Revert "Fixes ENG-789"' },
+      ];
+
+      const result = scanCommits(commits, {});
+      expect(result.unreferencedCommits.map((c) => c.sha)).toEqual(["ff1"]);
+    });
+
+    it("ignores commits excluded by --include-subjects", () => {
+      const commits: CommitContext[] = [
+        { sha: "a", message: "chore: bump deps" },
+        { sha: "b", message: "feat: add charlie file" },
+      ];
+
+      const result = scanCommits(commits, { includeSubjects: "^feat" });
+      expect(result.unreferencedCommits.map((c) => c.sha)).toEqual(["b"]);
+    });
+  });
 });
